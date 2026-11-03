@@ -1,4 +1,4 @@
-package upload
+package videohash
 
 import (
 	"crypto/sha256"
