@@ -33,12 +33,14 @@ enum VideoUploadStatus {
 // VideoUpload message. This stores the metadata of the uploaded video.
 // 
 // NOTE: hash is the SHA-256 hash of the video, we use this for the
-// duplicate detection extra credit.
+// duplicate detection extra credit. The signature is the perceptual
+// hash of the video, computed via video dHash.
 message VideoUploadInfo {
   string file_name = 1;
   int64 file_size = 2;
   int32 producer_id = 3;
   bytes hash = 4;
+  repeated fixed64 signature = 5;
 }
 
 // ---------------

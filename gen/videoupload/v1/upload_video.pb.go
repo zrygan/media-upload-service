@@ -83,13 +83,15 @@ func (VideoUploadStatus) EnumDescriptor() ([]byte, []int) {
 // VideoUpload message. This stores the metadata of the uploaded video.
 //
 // NOTE: hash is the SHA-256 hash of the video, we use this for the
-// duplicate detection extra credit.
+// duplicate detection extra credit. The signature is the perceptual
+// hash of the video, computed via video dHash.
 type VideoUploadInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	FileName      string                 `protobuf:"bytes,1,opt,name=file_name,json=fileName,proto3" json:"file_name,omitempty"`
 	FileSize      int64                  `protobuf:"varint,2,opt,name=file_size,json=fileSize,proto3" json:"file_size,omitempty"`
 	ProducerId    int32                  `protobuf:"varint,3,opt,name=producer_id,json=producerId,proto3" json:"producer_id,omitempty"`
 	Hash          []byte                 `protobuf:"bytes,4,opt,name=hash,proto3" json:"hash,omitempty"`
+	Signature     []uint64               `protobuf:"fixed64,5,rep,packed,name=signature,proto3" json:"signature,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -148,6 +150,13 @@ func (x *VideoUploadInfo) GetProducerId() int32 {
 func (x *VideoUploadInfo) GetHash() []byte {
 	if x != nil {
 		return x.Hash
+	}
+	return nil
+}
+
+func (x *VideoUploadInfo) GetSignature() []uint64 {
+	if x != nil {
+		return x.Signature
 	}
 	return nil
 }
@@ -389,13 +398,14 @@ var File_videoupload_v1_upload_video_proto protoreflect.FileDescriptor
 
 const file_videoupload_v1_upload_video_proto_rawDesc = "" +
 	"\n" +
-	"!videoupload/v1/upload_video.proto\x12\x0evideoupload.v1\"\x80\x01\n" +
+	"!videoupload/v1/upload_video.proto\x12\x0evideoupload.v1\"\x9e\x01\n" +
 	"\x0fVideoUploadInfo\x12\x1b\n" +
 	"\tfile_name\x18\x01 \x01(\tR\bfileName\x12\x1b\n" +
 	"\tfile_size\x18\x02 \x01(\x03R\bfileSize\x12\x1f\n" +
 	"\vproducer_id\x18\x03 \x01(\x05R\n" +
 	"producerId\x12\x12\n" +
-	"\x04hash\x18\x04 \x01(\fR\x04hash\"u\n" +
+	"\x04hash\x18\x04 \x01(\fR\x04hash\x12\x1c\n" +
+	"\tsignature\x18\x05 \x03(\x06R\tsignature\"u\n" +
 	"\x12UploadVideoRequest\x12>\n" +
 	"\tfile_info\x18\x01 \x01(\v2\x1f.videoupload.v1.VideoUploadInfoH\x00R\bfileInfo\x12\x14\n" +
 	"\x04data\x18\x02 \x01(\fH\x00R\x04dataB\t\n" +
