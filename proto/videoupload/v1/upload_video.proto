@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package videoupload.v1;
+
+option go_package = "github.com/zrygan/media-upload-service/gen/videoupload/v1;videouploadv1";
+
+service VideoUploadService {
+  // API for uploading a file, since the files to be
+  // uploaded are videos. We stream it (send it piece by piece).
+  rpc UploadVideo(stream UploadVideoRequest) returns (UploadVideoResponse);
+
+  // API for getting the state variables (status) of the video upload
+  // queue. 
+  rpc GetQueueStatus(GetQueueStatusRequest) returns (GetQueueStatusResponse);
+}
+
+// --------------------------
+// VideoUpload Types and APIs
+// --------------------------
+
+// Status enum for uploaded video.
+//
+// NOTE: *_DROPPED_DUPLICATE is the status code for the duplicate
+// detection extra credit. 
+enum VideoUploadStatus {
+  VIDEO_UPLOAD_STATUS_UNSPECIFIED = 0;
+  VIDEO_UPLOAD_ACCEPTED = 1;
+  VIDEO_UPLOAD_DROPPED_QUEUE_FULL = 2;
+  VIDEO_UPLOAD_DROPPED_DUPLICATE = 3;
+  VIDEO_UPLOAD_ERROR = 4;
+}
+
+// VideoUpload message. This stores the metadata of the uploaded video.
+// 
+// NOTE: hash is the SHA-256 hash of the video, we use this for the
+// duplicate detection extra credit.
+message VideoUploadInfo {
+  string file_name = 1;
+  int64 file_size = 2;
+  string producer_id = 3;
+  bytes hash = 4;
+}
+
+// ---------------
+// UploadVideo APIs
+// ---------------
+
+// Request message for UploadVideo. This requires the information
+// of the file to be uploaded, like the size, filename, etc., see
+// VideoUploadInfo. Alternatively, we can only send bytes.
+//
+// NOTE: Here, `oneof` means EITHER file_info or data---NOT BOTH. So,
+// the payload can have file_info only or data only, and not both at
+// the same time. We do this because we stream the uploads (see 
+// comment on UploadVideo). The idea is, at the first message we send
+// file info, and if the video is too big, the succeeding file uploads
+// are just the remaining bytes.
+message UploadVideoRequest {
+  oneof payload {
+    VideoUploadInfo file_info = 1;
+    bytes data = 2;
+  }
+}
+
+// Response message for UploadVideo. This returns the status of the
+// uploaded file, if it was successful or not, see VideoUploadStatus.
+message UploadVideoResponse {
+ VideoUploadStatus status = 1;
+}
+
+// -------------------
+// GetQueueStatus APIs
+// -------------------
+
+// Request message for GetQueueStatus
+message GetQueueStatusRequest {}
+
+// Response message for GetQueueStatus, this returns the fields
+// of the queue. So, this returns stuff like the size of the queue,
+// current number of elements in the queue, etc.
+//
+// NOTE: I don't think we need to add ALL state variables of a queue
+// though..?
+message GetQueueStatusResponse {
+  int32 max_size = 1;
+  int32 curr_size = 2;
+}
