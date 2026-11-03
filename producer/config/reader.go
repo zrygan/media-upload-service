@@ -10,10 +10,9 @@ import (
 // a JSON file. The schema of the JSON is handled via the struct tags
 // in ProducerConfig.
 //
-// This loads the JSON file and validates the config from the JSON
-// file. This loads the JSON file and validates the config from it.
-// If either step fails, this returns a nil config and an error,
-// so a non-nil config is always valid.
+// This loads the JSON file and validates the config from it. If
+// either step fails, this returns a nil config and an error, so a
+// non-nil config is always valid.
 func ReadConfigFromJSON(filename string) (*ProducerConfig, error) {
 	file, err := os.ReadFile(filename)
 	if err != nil {
@@ -25,7 +24,7 @@ func ReadConfigFromJSON(filename string) (*ProducerConfig, error) {
 		return nil, fmt.Errorf("cannot parse config %s: %w", filename, err)
 	}
 
-	if err := config.validate(); err != nil {
+	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config %s: %w", filename, err)
 	}
 

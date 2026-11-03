@@ -2,7 +2,8 @@ package config
 
 import (
 	"fmt"
-	"os"
+
+	"github.com/zrygan/media-upload-service/util"
 )
 
 // ProducerConfig holds the configurations for a producer.
@@ -17,7 +18,7 @@ type ProducerConfig struct {
 	ConsumerAddress string `json:"consumer_address"`
 }
 
-// validate ensures that the config contains valid parameters. This
+// Validate ensures that the config contains valid parameters. This
 // checks the following:
 //
 //  1. ThreadCount is positive.
@@ -32,7 +33,7 @@ type ProducerConfig struct {
 // Note that condition (4) only checks if ConsumerAddress is EMPTY,
 // it does not check for validity (if the address is valid and if the
 // address has a consumer listening to it).
-func (pc ProducerConfig) validate() error {
+func (pc ProducerConfig) Validate() error {
 	if pc.ThreadCount <= 0 {
 		return fmt.Errorf("thread_count must be positive, got %d", pc.ThreadCount)
 	}
@@ -42,8 +43,8 @@ func (pc ProducerConfig) validate() error {
 	}
 
 	for _, folder := range pc.FolderList {
-		if _, err := os.ReadDir(folder); err != nil {
-			return fmt.Errorf("Cannot open folder %s: %w", folder, err)
+		if err := util.CheckDirReadable(folder); err != nil {
+			return err
 		}
 	}
 
