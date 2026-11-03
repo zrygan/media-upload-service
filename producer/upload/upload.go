@@ -12,6 +12,7 @@ import (
 
 	videouploadv1 "github.com/zrygan/media-upload-service/gen/videoupload/v1"
 	"github.com/zrygan/media-upload-service/producer/network"
+	videohash "github.com/zrygan/media-upload-service/producer/video_hash"
 	"google.golang.org/grpc"
 )
 
@@ -46,15 +47,21 @@ func File(ctx context.Context, client *network.Client, producerID int, path stri
 		return statusUnknown, fmt.Errorf("upload %s: %w", path, err)
 	}
 
-	// TODO: perform the hashing somewhere here
-	// See hash.go
-	hash := make([]byte, 0)
+	hash, err := videohash.SHA256(file)
+	if err != nil {
+		return statusUnknown, fmt.Errorf("upload: %w", err)
+	}
+	signature, err := videohash.VideoSignature(ctx, file)
+	if err != nil {
+		return statusUnknown, fmt.Errorf("upload: %w", err)
+	}
 
 	info := &videouploadv1.VideoUploadInfo{
 		FileName:   filepath.Base(path),
 		FileSize:   stats.Size(),
 		ProducerId: int32(producerID),
 		Hash:       hash,
+		Signature:  signature,
 	}
 
 	slog.Info("upload started",

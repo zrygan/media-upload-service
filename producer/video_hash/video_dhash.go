@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"time"
 
 	"github.com/zrygan/media-upload-service/util/ffmpeg"
 )
@@ -19,6 +20,10 @@ const (
 	// The size of one frame in the output of ffmpeg, each pixel is one
 	// grayscale byte.
 	frameBytes = frameWidth * frameHeight
+	// The maximum time to compute the signature of one video. This is
+	// separate from the upload timeout, so the time spent here does not
+	// reduce the time left for the upload.
+	signatureTimeout = 5 * time.Minute
 )
 
 // VideoSignature returns the perceptual signature of the video, which is
@@ -32,6 +37,9 @@ const (
 // NOTE: Unlike SHA-256, a re-encoded copy of a video has a signature that
 // is close to the original, but usually not identical.
 func VideoSignature(ctx context.Context, video *os.File) ([]uint64, error) {
+	ctx, cancel := context.WithTimeout(ctx, signatureTimeout)
+	defer cancel()
+
 	raw, err := extractFrameRTI(ctx, video, 1)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract frames from %s: %w", video.Name(), err)
