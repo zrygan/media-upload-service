@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -33,7 +34,7 @@ const (
 // VIDEO_UPLOAD_DROPPED_QUEUE_FULL) and a nil error. The error is only
 // for uploads that failed, like if the file cannot be read or if the
 // consumer cannot be reached.
-func File(ctx context.Context, client *network.Client, producerID int32, path string) (videouploadv1.VideoUploadStatus, error) {
+func File(ctx context.Context, client network.Client, producerID int, path string) (videouploadv1.VideoUploadStatus, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return statusUnknown, fmt.Errorf("upload %s: %w", path, err)
@@ -52,9 +53,16 @@ func File(ctx context.Context, client *network.Client, producerID int32, path st
 	info := &videouploadv1.VideoUploadInfo{
 		FileName:   filepath.Base(path),
 		FileSize:   stats.Size(),
-		ProducerId: producerID,
+		ProducerId: int32(producerID),
 		Hash:       hash,
 	}
+
+	slog.Info("upload started",
+		"component", "upload",
+		"producer_id", producerID,
+		"file", info.GetFileName(),
+		"size_bytes", info.GetFileSize(),
+	)
 
 	ctx, cancel := context.WithTimeout(ctx, uploadTimeout)
 	defer cancel()
