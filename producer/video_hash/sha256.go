@@ -12,13 +12,11 @@ import (
 // implementation of the SHA256 (via Sum256) but takes in a video of
 // type *os.File instead of an array of bytes.
 func SHA256(video *os.File) ([]byte, error) {
-	var sum []byte
 	hasher := sha256.New()
 
 	if _, err := io.Copy(hasher, io.NewSectionReader(video, 0, math.MaxInt64)); err != nil {
-		return sum, fmt.Errorf("SHA256 failed to stream %s: %w", video.Name(), err)
+		return nil, fmt.Errorf("SHA256 failed to stream %s: %w", video.Name(), err)
 	}
 
-	hasher.Sum(sum[:0])
-	return sum, nil
+	return hasher.Sum(nil), nil
 }
