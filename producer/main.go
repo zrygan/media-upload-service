@@ -8,9 +8,9 @@ import (
 )
 
 func main() {
-	config, err := config.ReadConfigFromJSON(".configs/producer.json")
+	pc, err := config.ReadConfigFromJSON(".configs/producer.json")
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Print(config.ThreadCount, config.FolderList, config.ConsumerAddress)
+	fmt.Print(pc.ThreadCount, pc.FolderList, pc.ConsumerAddress)
 }
