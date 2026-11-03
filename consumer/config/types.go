@@ -6,6 +6,9 @@ import (
 	"github.com/zrygan/media-upload-service/util"
 )
 
+// ConsumerConfig holds the configurations for a consumer.
+// This also defines the JSON schema via struct tags which are used
+// in ReadConfigFromJSON.
 type ConsumerConfig struct {
 	// The maximum size or capacity of the upload queue.
 	QueueMaxSize int `json:"queue_max_size"`
@@ -24,26 +27,26 @@ type ConsumerConfig struct {
 // checks the following:
 //
 //  1. QueueMaxSize and ThreadCount is positive.
-//  2. ListenAddress is not empty.
+//  2. ListenAddress is in the form host:port with a valid port. The
+//     host can be empty (like :50051).
 //  3. MediaFolder and StagingFolder are both Readable and Writable.
 //
 // This returns nil if all conditions are met; otherwise, it returns
 // an error describing the first one that failed.
 //
-// Note that condition (2) only checks if ConsumerAddress is EMPTY,
-// it does not check for validity (if the address is valid and if the
-// address has a consumer listening to it).
+// Note that condition (2) only checks the FORMAT of ListenAddress, it
+// does not check if the port is free.
 func (cc ConsumerConfig) Validate() error {
-	if cc.QueueMaxSize < 0 {
+	if cc.QueueMaxSize <= 0 {
 		return fmt.Errorf("queue_max_size must be positive, got %d", cc.QueueMaxSize)
 	}
 
-	if cc.ThreadCount < 0 {
+	if cc.ThreadCount <= 0 {
 		return fmt.Errorf("thread_count must be positive, got %d", cc.ThreadCount)
 	}
 
-	if cc.ListenAddress == "" {
-		return fmt.Errorf("consumer_address must not be empty")
+	if err := util.CheckHostPort(cc.ListenAddress); err != nil {
+		return fmt.Errorf("listen_address: %w", err)
 	}
 
 	if err := util.CheckDirReadable(cc.MediaFolder); err != nil {
