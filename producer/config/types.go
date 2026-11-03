@@ -9,9 +9,12 @@ import (
 // This also defines the JSON schema via struct tags which are used
 // in ReadConfigFromJSON.
 type ProducerConfig struct {
-	ThreadCount     int      `json:"thread_count"`
-	FolderList      []string `json:"folder_list"`
-	ConsumerAddress string   `json:"consumer_address"`
+	// Number of producer workers.
+	ThreadCount int `json:"thread_count"`
+	// The folders that contain videos that the user wants to upload.
+	FolderList []string `json:"folder_list"`
+	// The address of the consumer or the media upload service.
+	ConsumerAddress string `json:"consumer_address"`
 }
 
 // validate ensures that the config contains valid parameters. This
