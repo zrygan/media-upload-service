@@ -88,7 +88,7 @@ type VideoUploadInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	FileName      string                 `protobuf:"bytes,1,opt,name=file_name,json=fileName,proto3" json:"file_name,omitempty"`
 	FileSize      int64                  `protobuf:"varint,2,opt,name=file_size,json=fileSize,proto3" json:"file_size,omitempty"`
-	ProducerId    string                 `protobuf:"bytes,3,opt,name=producer_id,json=producerId,proto3" json:"producer_id,omitempty"`
+	ProducerId    int32                  `protobuf:"varint,3,opt,name=producer_id,json=producerId,proto3" json:"producer_id,omitempty"`
 	Hash          []byte                 `protobuf:"bytes,4,opt,name=hash,proto3" json:"hash,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -138,11 +138,11 @@ func (x *VideoUploadInfo) GetFileSize() int64 {
 	return 0
 }
 
-func (x *VideoUploadInfo) GetProducerId() string {
+func (x *VideoUploadInfo) GetProducerId() int32 {
 	if x != nil {
 		return x.ProducerId
 	}
-	return ""
+	return 0
 }
 
 func (x *VideoUploadInfo) GetHash() []byte {
@@ -393,7 +393,7 @@ const file_videoupload_v1_upload_video_proto_rawDesc = "" +
 	"\x0fVideoUploadInfo\x12\x1b\n" +
 	"\tfile_name\x18\x01 \x01(\tR\bfileName\x12\x1b\n" +
 	"\tfile_size\x18\x02 \x01(\x03R\bfileSize\x12\x1f\n" +
-	"\vproducer_id\x18\x03 \x01(\tR\n" +
+	"\vproducer_id\x18\x03 \x01(\x05R\n" +
 	"producerId\x12\x12\n" +
 	"\x04hash\x18\x04 \x01(\fR\x04hash\"u\n" +
 	"\x12UploadVideoRequest\x12>\n" +
