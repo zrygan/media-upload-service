@@ -28,6 +28,10 @@ type ProducerConfig struct {
 //
 // This returns nil if all conditions are met; otherwise, it returns
 // an error describing the first one that failed.
+//
+// Note that condition (4) only checks if ConsumerAddress is EMPTY,
+// it does not check for validity (if the address is valid and if the
+// address has a consumer listening to it).
 func (pc ProducerConfig) validate() error {
 	if pc.ThreadCount <= 0 {
 		return fmt.Errorf("thread_count must be positive, got %d", pc.ThreadCount)
