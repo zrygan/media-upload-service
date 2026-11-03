@@ -43,7 +43,7 @@ func (pc ProducerConfig) validate() error {
 
 	for _, folder := range pc.FolderList {
 		if _, err := os.ReadDir(folder); err != nil {
-			return fmt.Errorf("cannot open folder %s: %w", folder, err)
+			return fmt.Errorf("Cannot open folder %s: %w", folder, err)
 		}
 	}
 
