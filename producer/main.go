@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -23,7 +24,10 @@ func main() {
 }
 
 func run() error {
-	pc, err := config.ReadConfigFromJSON(".configs/producer.json")
+	configPath := flag.String("config", ".configs/producer.json", "path to the producer config")
+	flag.Parse()
+
+	pc, err := config.ReadConfigFromJSON(*configPath)
 	if err != nil {
 		return err
 	}
@@ -36,9 +40,10 @@ func run() error {
 		return err
 	}
 	defer client.Close()
-	workers := worker.MakeWorkers(*pc)
+
+	workers := worker.MakeWorkers(pc.FolderList)
 	slog.Info("producer started", "thread_count", pc.ThreadCount, "consumer_address", pc.ConsumerAddress)
-	worker.RunThreads(workers, *client, ctx)
+	worker.RunThreads(ctx, workers, client)
 	slog.Info("producer stopped")
 	return nil
 }
