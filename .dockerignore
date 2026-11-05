@@ -1,0 +1,15 @@
+**/.git
+**/.gitignore
+**/.env
+
+proto/videoupload
+
+videos/
+**/*.mp4
+**/*.mov
+**/*.mkv
+**/*.webm
+**/*.avi
+
+uploads/
+configs/

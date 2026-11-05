@@ -1,0 +1,5 @@
+{
+    "thread_count": 4,
+    "folder_list": ["/videos/up1", "/videos/up2", "/videos/up3", "/videos/up4"],
+    "consumer_address": "172.28.0.10:9090"
+}
