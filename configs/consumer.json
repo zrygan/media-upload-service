@@ -1,0 +1,7 @@
+{
+  "queue_max_size": 100,
+  "thread_count": 4,
+  "listen_address": "localhost:8080",
+  "media_folder": "./uploads",
+  "staging_folder": "./staging"
+}
