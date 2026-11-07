@@ -10,16 +10,34 @@ type Job struct {
 }
 
 type Queue struct {
-	ch chan Job
+	ch      chan Job
+	reserve chan struct{}
 }
 
 func New(size int) *Queue {
-	return &Queue{ch: make(chan Job, size)}
+	return &Queue{ch: make(chan Job, size), reserve: make(chan struct{}, size)}
 }
 
 func (q *Queue) TryEnqueue(j Job) bool {
 	select {
 	case q.ch <- j:
+		return true
+	default:
+		return false
+	}
+}
+
+func (q *Queue) UnReserve() {
+	<-q.reserve
+}
+
+func (q *Queue) CountReserve() int {
+	return len(q.reserve)
+}
+
+func (q *Queue) TryReserve() bool {
+	select {
+	case q.reserve <- struct{}{}:
 		return true
 	default:
 		return false

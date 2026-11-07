@@ -40,12 +40,17 @@ func (s *VideoServer) UploadVideo(stream grpc.ClientStreamingServer[videouploadv
 		return status.Error(codes.InvalidArgument, "First message must be FileInfo")
 	}
 
+	if s.q.TryReserve() == false {
+		return stream.SendAndClose(&videouploadv1.UploadVideoResponse{Status: videouploadv1.VideoUploadStatus_VIDEO_UPLOAD_DROPPED_QUEUE_FULL})
+	}
+
 	ext := filepath.Ext(info.FileName) // ".MP4"
 	ext = strings.ToLower(ext)
 
 	f, err := os.CreateTemp(s.stagingFolder, "upload-*"+ext)
 
 	if err != nil {
+		s.q.UnReserve()
 		return err
 	}
 
@@ -54,6 +59,7 @@ func (s *VideoServer) UploadVideo(stream grpc.ClientStreamingServer[videouploadv
 		if e != false {
 			f.Close()
 			os.Remove(f.Name())
+			s.q.UnReserve()
 		}
 	}()
 
@@ -98,6 +104,7 @@ func (s *VideoServer) UploadVideo(stream grpc.ClientStreamingServer[videouploadv
 			"size mismatch: expected %d bytes, received %d", info.FileSize, chunkSize)
 	}
 
+	//this should never be the case then
 	if s.q.TryEnqueue(j) == false {
 		return stream.SendAndClose(&videouploadv1.UploadVideoResponse{Status: videouploadv1.VideoUploadStatus_VIDEO_UPLOAD_DROPPED_QUEUE_FULL})
 	}
