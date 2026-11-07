@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,7 +48,7 @@ func (s *VideoServer) UploadVideo(stream grpc.ClientStreamingServer[videouploadv
 	ext := filepath.Ext(info.FileName) // ".MP4"
 	ext = strings.ToLower(ext)
 
-	f, err := os.CreateTemp(s.stagingFolder, "upload-*"+ext)
+	f, err := os.CreateTemp(s.stagingFolder, StagingPrefix+"*"+ext)
 
 	if err != nil {
 		s.q.UnReserve()
@@ -104,9 +105,16 @@ func (s *VideoServer) UploadVideo(stream grpc.ClientStreamingServer[videouploadv
 			"size mismatch: expected %d bytes, received %d", info.FileSize, chunkSize)
 	}
 
-	//this should never be the case then
+	// Holding a permit guarantees a free slot in the job channel, so
+	// this only fails if the permit invariant is broken (for example a
+	// double UnReserve). Treat it as a server bug, not a full queue.
+	// e is still true here, so the deferred cleanup removes the staged
+	// file and releases the permit.
 	if s.q.TryEnqueue(j) == false {
-		return stream.SendAndClose(&videouploadv1.UploadVideoResponse{Status: videouploadv1.VideoUploadStatus_VIDEO_UPLOAD_DROPPED_QUEUE_FULL})
+		slog.Error("invariant broken: enqueue failed while holding a permit",
+			"component", "server", "file", info.FileName, "producer_id", info.ProducerId,
+			"reserved", s.q.CountReserve(), "pending", s.q.Pending(), "max", s.q.Size())
+		return status.Error(codes.Internal, "internal error: could not enqueue upload")
 	}
 	e = false
 
@@ -115,5 +123,5 @@ func (s *VideoServer) UploadVideo(stream grpc.ClientStreamingServer[videouploadv
 }
 
 func (s *VideoServer) GetQueueStatus(ctx context.Context, req *videouploadv1.GetQueueStatusRequest) (*videouploadv1.GetQueueStatusResponse, error) {
-	return &videouploadv1.GetQueueStatusResponse{MaxSize: int32(s.q.Size()), CurrSize: int32(s.q.Pending())}, nil
+	return &videouploadv1.GetQueueStatusResponse{MaxSize: int32(s.q.Size()), CurrSize: int32(s.q.CountReserve())}, nil
 }
