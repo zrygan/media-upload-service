@@ -33,4 +33,4 @@ go.work.sum
 *.*/
 
 videos/
-uploads/
+data/

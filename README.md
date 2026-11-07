@@ -16,7 +16,8 @@ To run with Docker you only need [Docker Desktop](https://www.docker.com/product
 | `consumer/` | Consumer program and its `Dockerfile` |
 | `configs/` | JSON config files, mounted into the containers |
 | `videos/` | Videos to upload, one subfolder per producer thread (not committed) |
-| `uploads/` | Where the consumer saves uploaded videos (not committed) |
+| `data/media/` | Where the consumer saves uploaded videos (not committed) |
+| `data/staging/` | Where the consumer keeps uploads that are still arriving, before moving them to `data/media/` (not committed) |
 | `docker-compose.yaml` | Builds and runs the producer and consumer together |
 
 ## Build without Docker
@@ -48,7 +49,17 @@ videos/
 └── up4/
 ```
 
-Also create an empty `uploads/` folder. Both folders are in `.gitignore` and `.dockerignore`.
+Also create the consumer's folders:
+
+```text
+data/
+├── media/
+└── staging/
+```
+
+The consumer checks that both exist when it starts. Docker creates `data/` if it is missing, but not the folders inside it. `videos/` and `data/` are in `.gitignore` and `.dockerignore`.
+
+`staging/` and `media/` must stay inside the same `data/` folder. Compose mounts `data/` as a single volume, so moving a finished upload from `staging/` to `media/` is a rename on one filesystem. If they were separate mounts, the rename would fail.
 
 ### 2. Check the producer config
 
@@ -90,7 +101,7 @@ docker compose down
 
 | Service | Address on `backend` | Ports published on the host | Mounts |
 | --- | --- | --- | --- |
-| `consumer` | `172.28.0.10` | `9090` → `9090` (gRPC) | `./uploads` → `/uploads` |
+| `consumer` | `172.28.0.10` | `9090` → `9090` (gRPC) | `./configs` → `/workspace/.configs` (read-only), `./data` → `/workspace/data` |
 | `producer` | `172.28.0.11` | none | `./configs` → `/workspace/.configs` (read-only), `./videos` → `/videos` (read-only) |
 
 Check the Compose file without building anything:

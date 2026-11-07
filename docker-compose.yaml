@@ -9,7 +9,10 @@ services:
     ports:
       - 9090:9090
     volumes:
-      - ./uploads:/uploads
+      - ./configs:/workspace/.configs:ro
+      # One mount for staging and media, so moving a finished upload
+      # from staging to media is a same-filesystem rename.
+      - ./data:/workspace/data
     
 
   producer:

@@ -11,5 +11,5 @@ videos/
 **/*.webm
 **/*.avi
 
-uploads/
+data/
 configs/
