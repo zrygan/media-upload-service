@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>[Consumer] Video GUI</title>
+     <script src="index.js" defer></script>
+<style>
+    h1 {
+        font-family: 'Courier New', monospace;
+        margin-left: 50px;
+    }
+    p {
+        font-family: 'Courier New', monospace;
+        margin-left: 50px;
+        font-weight: bold;
+    }
+    .video-grid-container{
+        width:90%;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap:10px;
+        margin: 0 auto;
+    }
+    .video-item{
+        background-color: #cdcdcd;
+        overflow:hidden;
+        width: 100%;
+        height: auto;
+        display:block;
+    }
+</style>
+
+</head>
+
+<body>
+
+<h1>[Consumer] Videos Recieved</h1>
+<p>The following are the videos recieved from the producers, in order.</p>
+
+<!-- NOTE: all currently hard-coded since I haven't implemented backend logic yet-->
+<div class = "video-grid-container">
+    <div class = "video-item" controls>
+        <video width="320" height="240" >
+
+        <!-- NOTE: add an mp4 here for testing purposes -->
+        <source src="vid1.mp4" type="video/mp4">
+        </video>
+    </div>
+    <div class = "video-item">
+        wefewf
+    </div>
+    <div class = "video-item">
+        wefewf
+    </div>
+    <div class = "video-item">
+        wefewf
+    </div>
+    <div class = "video-item">
+        wefewf
+    </div>
+</div>
+
+</body>
+</html>
