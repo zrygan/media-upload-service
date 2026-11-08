@@ -32,6 +32,8 @@ func MakeWorkers(threadCount int, q *queue.Queue, mediaFolder string) []Consumer
 //
 // This is a BLOCKING function, waits until all goroutines are
 // finished. The workers finish once the queue is closed and drained.
+// If a worker returns an error, it is logged and the other workers
+// keep running.
 func RunThreads(cws []ConsumerWorker) {
 	var wg sync.WaitGroup
 

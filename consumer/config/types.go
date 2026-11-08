@@ -10,23 +10,25 @@ import (
 // This also defines the JSON schema via struct tags which are used
 // in ReadConfigFromJSON.
 type ConsumerConfig struct {
-	// The maximum size or capacity of the upload queue.
+	// The maximum size or capacity of the upload queue (q). Uploads
+	// that arrive while it is full are dropped.
 	QueueMaxSize int `json:"queue_max_size"`
-	// The number of workers the consumer has.
+	// The number of workers the consumer has (c).
 	ThreadCount int `json:"thread_count"`
-	// The address the consumer listens to.
+	// The address the consumer listens to, as host:port.
 	ListenAddress string `json:"listen_address"`
 	// The output or destination folder, the uploaded files go here.
 	MediaFolder string `json:"media_folder"`
 	// The staging folder, files in the middle of uploading go here
-	// temporarily.
+	// temporarily. It must be on the same filesystem as MediaFolder,
+	// because workers move files between the two with os.Rename.
 	StagingFolder string `json:"staging_folder"`
 }
 
 // Validate ensures that the config contains valid parameters. This
 // checks the following:
 //
-//  1. QueueMaxSize and ThreadCount is positive.
+//  1. QueueMaxSize and ThreadCount are positive.
 //  2. ListenAddress is in the form host:port with a valid port. The
 //     host can be empty (like :50051).
 //  3. MediaFolder and StagingFolder are both Readable and Writable.
