@@ -1,9 +1,11 @@
 package main
 
 import (
-	"fmt"
+	"encoding/json"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -11,20 +13,47 @@ import (
 // send them back to the web app when needed
 
 func mainHandler(writer http.ResponseWriter, req *http.Request) {
-	if req.URL.Path != "/" {
-		http.NotFound(writer, req)
+	writer.Header().Set("Content-Type", "application/json")
+
+	videoDir := "./data/media"
+	files, err := os.ReadDir(videoDir)
+	if err != nil {
+		http.Error(writer, "unable to read video directory", http.StatusInternalServerError)
 		return
 	}
 
-	fmt.Fprint(writer, "hello world :3")
+	var videoURLs []string
+	for _, file := range files {
+		if !file.IsDir() && filepath.Ext(file.Name()) == ".mp4" {
+			webPath := "/data/media/" + file.Name()
+			videoURLs = append(videoURLs, webPath)
+		}
+	}
+
+	json.NewEncoder(writer).Encode(videoURLs)
 }
 
 func main() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", mainHandler)
+
+	fileServer := http.FileServer(http.Dir("./consumer/webapp"))
+	mux.Handle("/webapp/", http.StripPrefix("/webapp/", fileServer))
+
+	dataVideoServer := http.FileServer(http.Dir("./data/media"))
+	mux.Handle("/data/media/", http.StripPrefix("/data/media/", dataVideoServer))
+
+	mux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
+		if req.URL.Path != "/" {
+			http.NotFound(writer, req)
+			return
+		}
+		http.ServeFile(writer, req, "./consumer/webapp/index.html")
+	})
+
+	mux.HandleFunc("/api/videos/", mainHandler)
 
 	server := &http.Server{
-		Addr:         ":8080",
+		Addr:         ":8008",
 		Handler:      mux,
 		WriteTimeout: 20 * time.Second,
 		ReadTimeout:  20 * time.Second,
