@@ -28,14 +28,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     const video = event.target.closest("video");
     if (!video) return;
 
+    if(video.dataset.previewing === "1") return;
+    video.dataset.previewing = "1";
+
     startPreview(video);
-    previewTimeout = setTimeout(stopPreview(video), 10000);
+    previewTimeout = setTimeout(() => stopPreview(video), 10000);
   });
 
   videoContainer.addEventListener("mouseout", (event) => {
     const video = event.target.closest("video");
     if (!video) return;
 
+    video.dataset.previewing = "0";
     clearTimeout(previewTimeout);
     previewTimeout = null;
     stopPreview(video);
