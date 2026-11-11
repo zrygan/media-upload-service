@@ -1,7 +1,6 @@
 // const video = document.querySelector("video");
 
 function startPreview(video) {
-  video.muted = true;
   video.currentTime = 1;
   video.playbackRate = 1;
   video.play();
@@ -10,8 +9,7 @@ function startPreview(video) {
 function stopPreview(video) {
   video.currentTime = 0;
   video.playbackRate = 1;
-  video.pause();    
-  video.setAttribute("controls", "");
+  video.pause();
 }
 
 let previewTimeout = null;
@@ -28,6 +26,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const video = event.target.closest("video");
     if (!video) return;
 
+    if (document.fullscreenElement) return;
+
     if(video.dataset.previewing === "1") return;
     video.dataset.previewing = "1";
 
@@ -42,7 +42,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     video.dataset.previewing = "0";
     clearTimeout(previewTimeout);
     previewTimeout = null;
+
     stopPreview(video);
+  });
+
+  videoContainer.addEventListener("click", (event) => {
+      const video = event.target.closest("video");
+      if (!video) return;
+
+      if (event.target.tagName !== 'VIDEO' && document.fullscreenElement) return;
+
+      if(document.fullscreenElement){
+        document.exitFullscreen();
+      }
+      else{
+        video.requestFullscreen();
+        video.setAttribute("controls", "");
+        video.volume = 0.5;
+      }
+
+  });
+
+  document.addEventListener("fullscreenchange", () =>{
+    const videos = document.querySelectorAll('video');
+    if(!document.fullscreenElement){
+      videos.forEach(v => {
+        v.removeAttribute('controls');
+        v.dataset.previewing = "0";
+      });
+    }
   });
 
   try {
@@ -51,13 +79,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     videoContainer.innerHTML = '';
 
-    videoURLs.forEach(url => {
+    videoURLs.forEach(v => {
       const videoElement = `
       <div class = "video-item" controls>
           <video width="320" height="240" >
-            <source src="${url}" type="video/mp4">
+            <source src="${v.url}" type="video/mp4">
             yo video wont load
           </video>
+          <p>${v.title}</p>
       </div>
       `;
 

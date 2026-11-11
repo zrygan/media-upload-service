@@ -6,11 +6,17 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
 // this'll be a Go HTTP server that looks at the media/data folder where videos are dumped and can
 // send them back to the web app when needed
+
+type VideoInfo struct {
+	Title string `json:"title"`
+	URL   string `json:"url"`
+}
 
 func mainHandler(writer http.ResponseWriter, req *http.Request) {
 	writer.Header().Set("Content-Type", "application/json")
@@ -21,16 +27,31 @@ func mainHandler(writer http.ResponseWriter, req *http.Request) {
 		http.Error(writer, "unable to read video directory", http.StatusInternalServerError)
 		return
 	}
+	/*
+		var videoURLs []string
+		for _, file := range files {
+			if !file.IsDir() && filepath.Ext(file.Name()) == ".mp4" {
+				webPath := "/data/media/" + file.Name()
+				videoURLs = append(videoURLs, webPath)
+			}
+		}*/
 
-	var videoURLs []string
+	videos := []VideoInfo{}
 	for _, file := range files {
 		if !file.IsDir() && filepath.Ext(file.Name()) == ".mp4" {
-			webPath := "/data/media/" + file.Name()
-			videoURLs = append(videoURLs, webPath)
+			name := file.Name()
+			title := name
+			if i := strings.Index(name, "_"); i >= 0 {
+				title = name[i+1:]
+			}
+			videos = append(videos, VideoInfo{
+				Title: title,
+				URL:   "/data/media/" + name,
+			})
 		}
 	}
 
-	json.NewEncoder(writer).Encode(videoURLs)
+	json.NewEncoder(writer).Encode(videos)
 }
 
 func main() {
