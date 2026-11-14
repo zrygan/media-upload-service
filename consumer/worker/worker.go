@@ -1,10 +1,14 @@
 package worker
 
 import (
-	"encoding/hex"
+	"errors"
+	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 
 	"github.com/zrygan/media-upload-service/consumer/queue"
 )
@@ -16,6 +20,7 @@ type ConsumerWorker struct {
 	id    int
 	q     *queue.Queue
 	media string
+	mut   *sync.Mutex
 }
 
 // run takes jobs off the queue until the queue is closed and empty,
@@ -38,24 +43,44 @@ func (c *ConsumerWorker) run() error {
 		if !ok {
 			break
 		}
-		// the job left the queue, so its slot is free again
+
 		c.q.UnReserve()
 
-		// saved as <hash>_<name>, filepath.Base keeps it inside the
-		// media folder
-		//
-		// TODO: the hash comes from the producer and is not checked, so
-		// two uploads with the same hash and name overwrite each other
-		newName := hex.EncodeToString(j.Hash) + "_" + filepath.Base(j.FileName)
-		newPath := filepath.Join(c.media, newName)
-
-		err := os.Rename(j.StagingPath, newPath)
-
-		if err != nil {
-			slog.Error("move failed", "file", newPath, "err", err)
-			os.Remove(j.StagingPath)
+		if err := c.handle(j); err != nil {
+			slog.Error("job failed", "file", j.FileName, "err", err)
 		}
 
 	}
 	return nil
+}
+
+func (c *ConsumerWorker) handle(j queue.Job) error {
+	c.mut.Lock()
+	defer c.mut.Unlock()
+
+	fName := filepath.Base(j.FileName)
+	ext := filepath.Ext(fName)
+	base := strings.TrimSuffix(fName, ext)
+
+	for n := 0; ; n++ {
+		candidate := fName
+		if n > 0 {
+			candidate = fmt.Sprintf("%s (%d)%s", base, n, ext)
+		}
+		dst := filepath.Join(c.media, candidate)
+
+		_, err := os.Stat(dst)
+		if err == nil {
+			continue // name taken, try the next number
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("checking %s: %w", dst, err)
+		}
+
+		if err := os.Rename(j.StagingPath, dst); err != nil {
+			os.Remove(j.StagingPath)
+			return fmt.Errorf("moving to %s: %w", dst, err)
+		}
+		return nil
+	}
 }

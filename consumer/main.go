@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/zrygan/media-upload-service/consumer/config"
@@ -67,6 +68,7 @@ func run() error {
 	}
 
 	q := queue.New(cc.QueueMaxSize)
+	var mut sync.Mutex
 
 	// Serve blocks, so it runs on its own goroutine
 	srv := grpc.NewServer()
@@ -79,7 +81,7 @@ func run() error {
 	slog.Info("server started")
 
 	// done is closed once every worker has returned
-	cws := worker.MakeWorkers(cc.ThreadCount, q, cc.MediaFolder)
+	cws := worker.MakeWorkers(cc.ThreadCount, q, cc.MediaFolder, &mut)
 
 	done := make(chan struct{})
 	go func() {

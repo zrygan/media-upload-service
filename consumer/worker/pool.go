@@ -12,7 +12,7 @@ import (
 // q and save into the same mediaFolder. This does not spawn threads
 // and does not execute the workers. See RunThreads to see how threads
 // are spawned and executed.
-func MakeWorkers(threadCount int, q *queue.Queue, mediaFolder string) []ConsumerWorker {
+func MakeWorkers(threadCount int, q *queue.Queue, mediaFolder string, mut *sync.Mutex) []ConsumerWorker {
 	cws := make([]ConsumerWorker, threadCount)
 
 	for id := 0; id < threadCount; id++ {
@@ -20,6 +20,7 @@ func MakeWorkers(threadCount int, q *queue.Queue, mediaFolder string) []Consumer
 			id:    id,
 			q:     q,
 			media: mediaFolder,
+			mut:   mut,
 		}
 	}
 
