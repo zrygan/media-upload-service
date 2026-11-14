@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -170,4 +171,30 @@ func (s *VideoServer) UploadVideo(stream grpc.ClientStreamingServer[videouploadv
 // still get VIDEO_UPLOAD_DROPPED_QUEUE_FULL from UploadVideo.
 func (s *VideoServer) GetQueueStatus(ctx context.Context, req *videouploadv1.GetQueueStatusRequest) (*videouploadv1.GetQueueStatusResponse, error) {
 	return &videouploadv1.GetQueueStatusResponse{MaxSize: int32(s.q.Size()), CurrSize: int32(s.q.CountReserve())}, nil
+}
+
+func (s *VideoServer) GetUploadOffset(ctx context.Context, req *videouploadv1.GetUploadOffsetRequest) (*videouploadv1.GetUploadOffsetResponse, error) {
+
+	path, err := tempFile(s.stagingFolder, req.Hash)
+
+	// Not proper hashing
+	if err != nil {
+		slog.Warn("bad hash in GetUploadOffset",
+			"component", "server", "hash_len", len(req.Hash), "error", err)
+		return nil, status.Error(codes.InvalidArgument, "recived non-32 bytes")
+	}
+
+	st, err := os.Stat(path)
+
+	if errors.Is(err, fs.ErrNotExist) {
+		return &videouploadv1.GetUploadOffsetResponse{Offset: 0}, nil
+	}
+
+	if err != nil {
+		slog.Error("could not read staging file size",
+			"component", "server", "path", path, "error", err)
+		return nil, status.Error(codes.Internal, "cannot read staging file size")
+	}
+
+	return &videouploadv1.GetUploadOffsetResponse{Offset: st.Size()}, nil
 }

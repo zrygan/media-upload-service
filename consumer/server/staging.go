@@ -1,6 +1,9 @@
 package server
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -11,6 +14,7 @@ import (
 // creates in the staging folder. CleanStaging uses the same prefix to
 // find leftovers, so the two always agree on which files are ours.
 const StagingPrefix = "upload-"
+const StagingExt = ".part"
 
 // CleanStaging removes leftover StagingPrefix files from dir, such as
 // uploads that were cut off when the consumer last stopped. It returns
@@ -42,4 +46,11 @@ func CleanStaging(dir string) (int, error) {
 		removed++
 	}
 	return removed, nil
+}
+
+func tempFile(dir string, sum []byte) (string, error) {
+	if len(sum) != sha256.Size {
+		return "", fmt.Errorf("checksum must be %d bytes, got %d", sha256.Size, len(sum))
+	}
+	return filepath.Join(dir, StagingPrefix+hex.EncodeToString(sum)+StagingExt), nil
 }

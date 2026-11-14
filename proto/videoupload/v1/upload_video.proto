@@ -12,6 +12,12 @@ service VideoUploadService {
   // API for getting the state variables (status) of the video upload
   // queue. 
   rpc GetQueueStatus(GetQueueStatusRequest) returns (GetQueueStatusResponse);
+
+  // API for resuming an upload. This returns how many bytes of a video
+  // the consumer already has, so the producer can continue from there
+  // instead of sending the whole file again. The producer calls this
+  // before each UploadVideo attempt.
+  rpc GetUploadOffset(GetUploadOffsetRequest) returns (GetUploadOffsetResponse);
 }
 
 // --------------------------
@@ -41,6 +47,11 @@ message VideoUploadInfo {
   int32 producer_id = 3;
   bytes hash = 4;
   repeated fixed64 signature = 5;
+  // The byte in the file where the first data chunk starts. This is
+  // the value GetUploadOffset returned. 0 means a fresh upload from
+  // the start of the file, which is also what a producer that does
+  // not set this field sends.
+  int64 offset = 6;
 }
 
 // ---------------
@@ -86,4 +97,24 @@ message GetQueueStatusRequest {}
 message GetQueueStatusResponse {
   int32 max_size = 1;
   int32 curr_size = 2;
+}
+
+// --------------------
+// GetUploadOffset APIs
+// --------------------
+
+// Request message for GetUploadOffset. The video is identified by its
+// SHA-256 hash (the same value as VideoUploadInfo.hash), not by its
+// file name, since two producers can have different videos with the
+// same name.
+message GetUploadOffsetRequest {
+  bytes hash = 1;
+}
+
+// Response message for GetUploadOffset. offset is the number of bytes
+// of the video the consumer has already stored, which is also the
+// byte the producer should continue from. 0 means the consumer has
+// nothing for this hash, so the upload starts from the beginning.
+message GetUploadOffsetResponse {
+  int64 offset = 1;
 }
