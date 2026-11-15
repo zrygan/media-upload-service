@@ -14,6 +14,10 @@ import (
 // creates in the staging folder. CleanStaging uses the same prefix to
 // find leftovers, so the two always agree on which files are ours.
 const StagingPrefix = "upload-"
+
+// StagingExt is the end of every staged file name built by tempFile. A
+// .part file is an upload that has not finished yet, which a producer
+// can resume.
 const StagingExt = ".part"
 
 // CleanStaging removes leftover StagingPrefix files from dir, such as
@@ -48,6 +52,15 @@ func CleanStaging(dir string) (int, error) {
 	return removed, nil
 }
 
+// tempFile returns the staging path for the video with SHA-256 hash
+// sum: dir/upload-<hash in hex>.part. The name comes only from the
+// hash, so every attempt to upload the same video finds the same file.
+// This is what lets an upload resume. Every place that needs a staged
+// file's name must build it here, so they always agree.
+//
+// The hash comes from the producer, so its length is checked. Without
+// the check, an empty hash would become "upload-.part", and every
+// upload with an empty hash would share that one file.
 func tempFile(dir string, sum []byte) (string, error) {
 	if len(sum) != sha256.Size {
 		return "", fmt.Errorf("checksum must be %d bytes, got %d", sha256.Size, len(sum))

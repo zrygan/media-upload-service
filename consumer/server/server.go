@@ -173,11 +173,21 @@ func (s *VideoServer) GetQueueStatus(ctx context.Context, req *videouploadv1.Get
 	return &videouploadv1.GetQueueStatusResponse{MaxSize: int32(s.q.Size()), CurrSize: int32(s.q.CountReserve())}, nil
 }
 
+// GetUploadOffset returns how many bytes of a video the consumer
+// already has in the staging folder, so the producer can resume an
+// upload instead of starting over. The video is found by its SHA-256
+// hash (see tempFile). Offset 0 means there is no staged file for this
+// hash, so the upload starts from the beginning.
+//
+// A hash with the wrong length is the producer's mistake and returns
+// codes.InvalidArgument (retrying will not help). A file that exists
+// but cannot be read is the consumer's problem and returns
+// codes.Internal.
 func (s *VideoServer) GetUploadOffset(ctx context.Context, req *videouploadv1.GetUploadOffsetRequest) (*videouploadv1.GetUploadOffsetResponse, error) {
 
 	path, err := tempFile(s.stagingFolder, req.Hash)
 
-	// Not proper hashing
+	// the hash came over the network, so its length is not guaranteed
 	if err != nil {
 		slog.Warn("bad hash in GetUploadOffset",
 			"component", "server", "hash_len", len(req.Hash), "error", err)

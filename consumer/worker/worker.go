@@ -24,12 +24,13 @@ type ConsumerWorker struct {
 }
 
 // run takes jobs off the queue until the queue is closed and empty,
-// and moves each staged file into the media folder. A failed move is
-// logged, the staged file is removed, and the worker continues with
-// the next job. This currently always returns nil.
+// and moves each staged file into the media folder (see handle). A
+// failed job is logged and the worker continues with the next job.
+// This currently always returns nil.
 //
 // All workers receive from the same channel, and each job is received
-// by only one worker, so no lock is needed.
+// by only one worker, so taking a job needs no lock. Picking the saved
+// file's name does need one, see handle.
 //
 // NOTE: os.Rename moves the whole file at once, so the GUI never sees
 // a half-written video. This only works because the staging and media
@@ -54,6 +55,14 @@ func (c *ConsumerWorker) run() error {
 	return nil
 }
 
+// handle moves one staged upload into the media folder. The video is
+// saved under its original name, or as "name (n).ext" if that name is
+// taken. If the rename fails, the staged file is removed.
+//
+// The mutex is shared by all workers and is held from checking the
+// name until the rename. Without it, two workers saving videos with
+// the same name could both see the name as free, and the second
+// rename would overwrite the first video.
 func (c *ConsumerWorker) handle(j queue.Job) error {
 	c.mut.Lock()
 	defer c.mut.Unlock()
