@@ -1,15 +1,14 @@
 package dedup
 
-// frameDistance returns the Hamming distance of two frame hashes, which
-// is the number of bits that differ between them.
+// frameDistance returns the number of bits that differ between two frame
+// hashes (the Hamming distance).
 func frameDistance(a, b uint64) int {
 	// TODO: implement
 	panic("frameDistance: not implemented")
 }
 
-// isInformative returns false if the frame hash is from a near-uniform
-// frame, like a black screen. These hash to almost the same value, so
-// they should not count as matching frames.
+// isInformative returns false for a near-uniform frame, like a black
+// screen. Those all hash alike, so they shouldn't count as matches.
 func isInformative(hash uint64) bool {
 	// TODO: implement
 	panic("isInformative: not implemented")
@@ -22,8 +21,8 @@ func bestAlignment(a, b []uint64) int {
 	panic("bestAlignment: not implemented")
 }
 
-// isDuplicate returns true if the signatures a and b are of the same
-// video, based on the number of frames that matched in bestAlignment.
+// isDuplicate reports whether a and b are the same video, based on the
+// matching frames from bestAlignment.
 func isDuplicate(a, b []uint64) bool {
 	// TODO: implement
 	panic("isDuplicate: not implemented")

@@ -11,40 +11,25 @@ import (
 	"time"
 )
 
-// StagingPrefix is the start of every temp file name that UploadVideo
-// creates in the staging folder. CleanStaging uses the same prefix to
-// find leftovers, so the two always agree on which files are ours.
+// StagingPrefix starts every staging file name. CleanStaging only
+// touches files that have it.
 const StagingPrefix = "upload-"
 
-// StagingExt is the end of every staged file name built by tempFile. A
-// .part file is an upload that has not finished yet, which a producer
-// can resume.
+// StagingExt ends the name of an unfinished upload that can be resumed.
 const StagingExt = ".part"
 
-// stagingMaxAge is how long an unfinished upload (a .part file) is kept
-// after it was last written to. A producer that comes back within this
-// time can resume. An older .part file is treated as abandoned and
-// CleanStaging removes it.
+// stagingMaxAge is how long an untouched .part file is kept before
+// CleanStaging treats it as abandoned.
 const stagingMaxAge = 24 * time.Hour
 
-// CleanStaging removes leftover StagingPrefix files from dir. It
-// returns how many files it removed.
+// CleanStaging removes leftovers from dir and returns how many it
+// removed: .part files not written to within stagingMaxAge, and any
+// other StagingPrefix file (random names from older versions). Recent
+// .part files stay so they can resume. Files without StagingPrefix are
+// never touched, in case dir is misconfigured.
 //
-//   - A .part file (an unfinished upload) is kept if it was written to
-//     within stagingMaxAge, so its producer can still resume it. An
-//     older one is removed as abandoned.
-//   - Any other StagingPrefix file is removed right away. Those are
-//     left over from older versions of the consumer, which used random
-//     staging names that nothing can resume.
-//
-// Call it before the gRPC server starts. While the server runs, the
-// staging folder holds uploads that are still arriving, and removing
-// one would break that upload.
-//
-// Only regular files that start with StagingPrefix are removed, so a
-// misconfigured folder (for example the media folder) is left alone.
-// A file that cannot be checked or removed is logged and skipped. The
-// returned error is only for when dir itself cannot be read.
+// Call it before the server starts, so it can't remove a live upload.
+// The error is only for when dir can't be read.
 func CleanStaging(dir string) (int, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -60,10 +45,9 @@ func CleanStaging(dir string) (int, error) {
 		info, err := e.Info()
 		if err != nil {
 			slog.Warn("could not check staging file", "component", "server", "file", e.Name(), "error", err)
-			continue // same as a failed remove: skip it, keep going
+			continue
 		}
 
-		// a recent .part file is an upload a producer can still resume.
 		// ModTime is the last write, so an upload that keeps resuming
 		// stays recent
 		if strings.HasSuffix(e.Name(), StagingExt) && time.Since(info.ModTime()) < stagingMaxAge {
@@ -79,15 +63,10 @@ func CleanStaging(dir string) (int, error) {
 	return removed, nil
 }
 
-// tempFile returns the staging path for the video with SHA-256 hash
-// sum: dir/upload-<hash in hex>.part. The name comes only from the
-// hash, so every attempt to upload the same video finds the same file.
-// This is what lets an upload resume. Every place that needs a staged
-// file's name must build it here, so they always agree.
-//
-// The hash comes from the producer, so its length is checked. Without
-// the check, an empty hash would become "upload-.part", and every
-// upload with an empty hash would share that one file.
+// tempFile returns dir/upload-<hex hash>.part. The name depends only on
+// the hash, so every attempt for the same video finds the same file.
+// Build staging names only here. The length check stops an empty hash
+// from making every bad upload share "upload-.part".
 func tempFile(dir string, sum []byte) (string, error) {
 	if len(sum) != sha256.Size {
 		return "", fmt.Errorf("checksum must be %d bytes, got %d", sha256.Size, len(sum))
