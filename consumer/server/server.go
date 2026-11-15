@@ -217,7 +217,7 @@ func (s *VideoServer) GetUploadOffset(ctx context.Context, req *videouploadv1.Ge
 	if err != nil {
 		slog.Warn("bad hash in GetUploadOffset",
 			"component", "server", "hash_len", len(req.Hash), "error", err)
-		return nil, status.Error(codes.InvalidArgument, "recived non-32 bytes")
+		return nil, status.Error(codes.InvalidArgument, "Recived invalid byte size")
 	}
 
 	st, err := os.Stat(path)
