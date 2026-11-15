@@ -2,12 +2,14 @@ package server
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"io"
 	"io/fs"
 	"log/slog"
 	"os"
 
+	"github.com/zrygan/media-upload-service/consumer/inflight"
 	"github.com/zrygan/media-upload-service/consumer/queue"
 	videouploadv1 "github.com/zrygan/media-upload-service/gen/videoupload/v1"
 	"google.golang.org/grpc"
@@ -15,58 +17,35 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// VideoServer is the consumer's implementation of the gRPC
-// VideoUploadService. gRPC runs each call on its own goroutine, so
-// many UploadVideo calls can run at the same time.
-//
-// The fields are only set in New, so the calls can read them without
-// a lock. The queue is the only thing the calls share, and it is safe
-// for concurrent use.
+// VideoServer implements the gRPC VideoUploadService. gRPC runs each
+// call on its own goroutine. The fields never change after New, so
+// reading them needs no lock, and q and h are safe for concurrent use.
 type VideoServer struct {
 	q             *queue.Queue
+	h             *inflight.Hashbrowns
 	stagingFolder string
-	// Required by gRPC-Go. This returns codes.Unimplemented for any RPC
-	// that VideoServer does not implement.
+	// Answers codes.Unimplemented for RPCs not written here.
 	videouploadv1.UnimplementedVideoUploadServiceServer
 }
 
-// New returns a VideoServer that adds uploads to queue and stages them
-// in the folder path.
-//
-// NOTE: path must be on the same filesystem as the media folder, since
-// the workers move files out of it with os.Rename.
-func New(queue *queue.Queue, path string) *VideoServer {
+// New returns a VideoServer. path must be on the same filesystem as the
+// media folder, because workers move files out of it with os.Rename.
+func New(queue *queue.Queue, path string, hashbrowns *inflight.Hashbrowns) *VideoServer {
 
-	return &VideoServer{q: queue, stagingFolder: path}
+	return &VideoServer{q: queue, stagingFolder: path, h: hashbrowns}
 }
 
-// UploadVideo receives one video from a producer and adds it to the
-// queue. The first message must be the file info, and the rest are
-// the video's data chunks (see UploadVideoRequest in the proto).
+// UploadVideo receives one video: a file info message, then data chunks.
 //
-// This does the following:
+//  1. Check the hash and claim it in h. If another upload has it, reply
+//     ACCEPTED (already queued) or codes.Aborted (still uploading).
+//  2. Take a queue permit, or reply DROPPED_QUEUE_FULL.
+//  3. Open the hash's .part file and line it up with info.Offset.
+//  4. Append the chunks and check the total size.
+//  5. Mark the hash Queued, queue the job, reply ACCEPTED.
 //
-//  1. Reads the file info.
-//  2. Takes a queue permit. If the queue is full, this replies
-//     VIDEO_UPLOAD_DROPPED_QUEUE_FULL before receiving any data.
-//  3. Opens the video's staging file (see tempFile). The name comes
-//     from the hash, so a resumed upload opens the same file again.
-//  4. Lines the file up with info.Offset, the byte the producer's
-//     chunks start at (from GetUploadOffset). If the file is shorter,
-//     the producer's offset is out of date and this returns
-//     codes.Aborted, so the producer asks again and retries. If the
-//     file is longer, the extra bytes are cut off.
-//  5. Appends the chunks, then checks that the file is now exactly
-//     file_size bytes.
-//  6. Adds the job to the queue and replies VIDEO_UPLOAD_ACCEPTED.
-//
-// A full queue is not an error, it is returned as the status. The
-// error is only for broken uploads, like a stream error, a disk error,
-// or a size mismatch.
-//
-// If this fails, the permit is always given back. The staging file is
-// kept, so the producer can resume from it, unless its bytes are wrong
-// (a size mismatch), in which case it is removed.
+// On failure the hash and the permit are released. The .part file is
+// kept so the producer can resume, unless its size is wrong.
 func (s *VideoServer) UploadVideo(stream grpc.ClientStreamingServer[videouploadv1.UploadVideoRequest, videouploadv1.UploadVideoResponse]) error {
 
 	first, err := stream.Recv()
@@ -81,27 +60,39 @@ func (s *VideoServer) UploadVideo(stream grpc.ClientStreamingServer[videouploadv
 		return status.Error(codes.InvalidArgument, "First message must be FileInfo")
 	}
 
+	tempPath, err := tempFile(s.stagingFolder, info.Hash)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, "Recived invalid byte size")
+	}
+
+	hash := hex.EncodeToString(info.Hash)
+	hst, started := s.h.TryUpload(hash)
+	if !started && hst == inflight.Queued {
+		// an earlier attempt already queued it; the producer missed the reply
+		return stream.SendAndClose(&videouploadv1.UploadVideoResponse{Status: videouploadv1.VideoUploadStatus_VIDEO_UPLOAD_ACCEPTED})
+	}
+	if !started {
+		return status.Error(codes.Aborted, "Upload already in progress")
+	}
+
+	// While e is true, any return runs the cleanup in the two defers
+	// (hash, then permit and file). Once the job is queued (e = false),
+	// all three belong to a worker.
+	e := true
+	defer func() {
+		if e == true {
+			s.h.Drop(hash)
+		}
+	}()
+
 	if s.q.TryReserve() == false {
 		return stream.SendAndClose(&videouploadv1.UploadVideoResponse{Status: videouploadv1.VideoUploadStatus_VIDEO_UPLOAD_DROPPED_QUEUE_FULL})
 	}
 
-	tempPath, err := tempFile(s.stagingFolder, info.Hash)
-
-	if err != nil {
-		s.q.UnReserve()
-		return err
-	}
-
-	// O_CREATE without O_TRUNC: create the file if this is a new
-	// upload, and keep the bytes already there if it is a resume
+	// no O_TRUNC: a resume keeps the bytes already there
 	f, err := os.OpenFile(tempPath, os.O_CREATE|os.O_WRONLY, 0o644)
 
-	// While e is true, any return gives back the permit and closes the
-	// file. Once the job is in the queue (e = false), both belong to a
-	// worker. keep decides what happens to the file on a failure: it
-	// stays (so the upload can resume) unless keep is set to false
-	// because its bytes are wrong.
-	e := true
+	// keep = false makes the cleanup delete the file (its bytes are wrong)
 	keep := true
 	defer func() {
 		if e {
@@ -123,9 +114,10 @@ func (s *VideoServer) UploadVideo(stream grpc.ClientStreamingServer[videouploadv
 		return err
 	}
 
-	// tempOffset counts the bytes in the file. After the switch it equals
-	// info.Offset, and each chunk adds to it, so at the end it is the
-	// file's full size.
+	// Line the file up with info.Offset. Shorter means the producer's
+	// offset is out of date (it asks again and retries). Longer means
+	// cut off the bytes it is about to resend. tempOffset ends up as
+	// the file's total size.
 	tempOffset := st.Size()
 
 	switch {
@@ -153,8 +145,6 @@ func (s *VideoServer) UploadVideo(stream grpc.ClientStreamingServer[videouploadv
 		Signature:   info.Signature,
 		StagingPath: f.Name(),
 	}
-
-	// write the chunks until the producer closes the stream (io.EOF)
 
 	for {
 		data, err := stream.Recv()
@@ -184,20 +174,19 @@ func (s *VideoServer) UploadVideo(stream grpc.ClientStreamingServer[videouploadv
 		return err
 	}
 
-	// the producer stopped early or sent the wrong size. The file's
-	// bytes can't be trusted, so it is removed instead of kept
+	// wrong size: the bytes can't be trusted, so delete instead of keep
 	if tempOffset != info.FileSize {
 		keep = false
 		return status.Errorf(codes.InvalidArgument,
 			"size mismatch: expected %d bytes, received %d", info.FileSize, tempOffset)
 	}
 
-	// Holding a permit guarantees a free slot in the job channel, so
-	// this only fails if the permit invariant is broken (for example a
-	// double UnReserve). Treat it as a server bug, not a full queue.
-	// e is still true here, so the deferred cleanup releases the permit.
-	// The staged file passed the size check, so it is kept, and the
-	// producer's next attempt can queue it without sending it again.
+	// before TryEnqueue, not after (see HashQueued)
+	s.h.HashQueued(hash)
+
+	// The permit guarantees room, so this only fails on a bug (a broken
+	// permit count). e is still true, so the hash and permit are
+	// released. The file passed the size check, so it is kept.
 	if s.q.TryEnqueue(j) == false {
 		slog.Error("invariant broken: enqueue failed while holding a permit",
 			"component", "server", "file", info.FileName, "producer_id", info.ProducerId,
@@ -210,32 +199,21 @@ func (s *VideoServer) UploadVideo(stream grpc.ClientStreamingServer[videouploadv
 
 }
 
-// GetQueueStatus returns the maximum size of the queue and the number
-// of slots in use. A slot is in use from the start of an upload until
-// a worker takes its job, so CurrSize also counts uploads that are
-// still arriving.
-//
-// NOTE: This is only a snapshot. A producer that sees a free slot can
-// still get VIDEO_UPLOAD_DROPPED_QUEUE_FULL from UploadVideo.
+// GetQueueStatus returns the queue's capacity and the slots in use,
+// which includes uploads still arriving. It is only a snapshot: a free
+// slot can be gone by the next UploadVideo.
 func (s *VideoServer) GetQueueStatus(ctx context.Context, req *videouploadv1.GetQueueStatusRequest) (*videouploadv1.GetQueueStatusResponse, error) {
 	return &videouploadv1.GetQueueStatusResponse{MaxSize: int32(s.q.Size()), CurrSize: int32(s.q.CountReserve())}, nil
 }
 
-// GetUploadOffset returns how many bytes of a video the consumer
-// already has in the staging folder, so the producer can resume an
-// upload instead of starting over. The video is found by its SHA-256
-// hash (see tempFile). Offset 0 means there is no staged file for this
-// hash, so the upload starts from the beginning.
-//
-// A hash with the wrong length is the producer's mistake and returns
-// codes.InvalidArgument (retrying will not help). A file that exists
-// but cannot be read is the consumer's problem and returns
-// codes.Internal.
+// GetUploadOffset returns how many bytes of the video (found by hash)
+// are already staged, so the producer can resume. 0 means none. A bad
+// hash returns codes.InvalidArgument (retrying won't help), and an
+// unreadable file returns codes.Internal.
 func (s *VideoServer) GetUploadOffset(ctx context.Context, req *videouploadv1.GetUploadOffsetRequest) (*videouploadv1.GetUploadOffsetResponse, error) {
 
 	path, err := tempFile(s.stagingFolder, req.Hash)
 
-	// the hash came over the network, so its length is not guaranteed
 	if err != nil {
 		slog.Warn("bad hash in GetUploadOffset",
 			"component", "server", "hash_len", len(req.Hash), "error", err)

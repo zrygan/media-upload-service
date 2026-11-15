@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/zrygan/media-upload-service/consumer/config"
+	"github.com/zrygan/media-upload-service/consumer/inflight"
 	"github.com/zrygan/media-upload-service/consumer/queue"
 	"github.com/zrygan/media-upload-service/consumer/server"
 	"github.com/zrygan/media-upload-service/consumer/worker"
@@ -28,19 +29,14 @@ func main() {
 	}
 }
 
-// run starts the gRPC server and the workers, then blocks until the
-// consumer is stopped (Ctrl+C or SIGTERM) or the server fails. This
-// returns nil on a normal shutdown; otherwise, it returns the error
-// that stopped it.
+// run starts the server and the workers, and blocks until Ctrl+C,
+// SIGTERM or a server error. The shutdown order matters:
 //
-// The shutdown happens in this order:
-//
-//  1. srv.GracefulStop stops new uploads and waits for the running
-//     ones to finish, so nothing is added to the queue after this.
-//  2. q.Close closes the queue. This MUST come after (1), since adding
-//     to a closed queue panics.
-//  3. <-done waits for the workers to empty the queue, so every
-//     accepted upload is saved before the consumer exits.
+//  1. GracefulStop: no new uploads, running ones finish.
+//  2. q.Close: must come after 1, since enqueueing to a closed queue
+//     panics.
+//  3. <-done: the workers empty the queue, so every accepted upload is
+//     saved.
 func run() error {
 
 	configPath := flag.String("config", ".configs/consumer.json", "path to the consumer config")
@@ -51,14 +47,13 @@ func run() error {
 		return err
 	}
 
-	// this must run before the server starts, see CleanStaging
+	// before the server starts (see CleanStaging)
 	_, err = server.CleanStaging(cc.StagingFolder)
 
 	if err != nil {
 		return err
 	}
 
-	// ctx is cancelled on Ctrl+C or SIGTERM
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -67,12 +62,14 @@ func run() error {
 		return err
 	}
 
+	// one of each, shared by the server and every worker
 	q := queue.New(cc.QueueMaxSize)
+	h := inflight.New()
 	var mut sync.Mutex
 
 	// Serve blocks, so it runs on its own goroutine
 	srv := grpc.NewServer()
-	videouploadv1.RegisterVideoUploadServiceServer(srv, server.New(q, cc.StagingFolder))
+	videouploadv1.RegisterVideoUploadServiceServer(srv, server.New(q, cc.StagingFolder, h))
 	serveErr := make(chan error, 1)
 	go func() {
 		serveErr <- srv.Serve(lis)
@@ -80,9 +77,9 @@ func run() error {
 
 	slog.Info("server started")
 
-	// done is closed once every worker has returned
-	cws := worker.MakeWorkers(cc.ThreadCount, q, cc.MediaFolder, &mut)
+	cws := worker.MakeWorkers(cc.ThreadCount, q, cc.MediaFolder, &mut, h)
 
+	// done is closed once every worker has returned
 	done := make(chan struct{})
 	go func() {
 		worker.RunThreads(cws)
