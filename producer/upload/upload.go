@@ -37,9 +37,12 @@ const (
 	retryMaxDelay = 30 * time.Second
 )
 
-// isRetryable returns true if err means the consumer could not be reached.
+// isRetryable returns true if trying again could succeed: the consumer
+// could not be reached (codes.Unavailable), or the offset this attempt
+// used was out of date (codes.Aborted). The next attempt asks for the
+// offset again. Other errors would fail the same way every time.
 func isRetryable(err error) bool {
-	return status.Code(err) == codes.Unavailable
+	return (status.Code(err) == codes.Unavailable) || (status.Code(err) == codes.Aborted)
 }
 
 // File uploads the file at path to the consumer and returns the status
