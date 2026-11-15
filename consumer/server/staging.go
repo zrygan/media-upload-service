@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // StagingPrefix is the start of every temp file name that UploadVideo
@@ -20,9 +21,21 @@ const StagingPrefix = "upload-"
 // can resume.
 const StagingExt = ".part"
 
-// CleanStaging removes leftover StagingPrefix files from dir, such as
-// uploads that were cut off when the consumer last stopped. It returns
-// how many files it removed.
+// stagingMaxAge is how long an unfinished upload (a .part file) is kept
+// after it was last written to. A producer that comes back within this
+// time can resume. An older .part file is treated as abandoned and
+// CleanStaging removes it.
+const stagingMaxAge = 24 * time.Hour
+
+// CleanStaging removes leftover StagingPrefix files from dir. It
+// returns how many files it removed.
+//
+//   - A .part file (an unfinished upload) is kept if it was written to
+//     within stagingMaxAge, so its producer can still resume it. An
+//     older one is removed as abandoned.
+//   - Any other StagingPrefix file is removed right away. Those are
+//     left over from older versions of the consumer, which used random
+//     staging names that nothing can resume.
 //
 // Call it before the gRPC server starts. While the server runs, the
 // staging folder holds uploads that are still arriving, and removing
@@ -30,8 +43,8 @@ const StagingExt = ".part"
 //
 // Only regular files that start with StagingPrefix are removed, so a
 // misconfigured folder (for example the media folder) is left alone.
-// A file that cannot be removed is logged and skipped. The returned
-// error is only for when dir itself cannot be read.
+// A file that cannot be checked or removed is logged and skipped. The
+// returned error is only for when dir itself cannot be read.
 func CleanStaging(dir string) (int, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -43,6 +56,20 @@ func CleanStaging(dir string) (int, error) {
 		if e.IsDir() || !strings.HasPrefix(e.Name(), StagingPrefix) {
 			continue // not ours: leave it alone
 		}
+
+		info, err := e.Info()
+		if err != nil {
+			slog.Warn("could not check staging file", "component", "server", "file", e.Name(), "error", err)
+			continue // same as a failed remove: skip it, keep going
+		}
+
+		// a recent .part file is an upload a producer can still resume.
+		// ModTime is the last write, so an upload that keeps resuming
+		// stays recent
+		if strings.HasSuffix(e.Name(), StagingExt) && time.Since(info.ModTime()) < stagingMaxAge {
+			continue
+		}
+
 		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
 			slog.Warn("could not remove staging file", "component", "server", "file", e.Name(), "error", err)
 			continue // one stuck file shouldn't stop startup
