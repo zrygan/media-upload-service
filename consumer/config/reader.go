@@ -6,13 +6,8 @@ import (
 	"os"
 )
 
-// ReadConfigFromJSON returns a ConsumerConfig whose values come from
-// a JSON file. The schema of the JSON is handled via the struct tags
-// in ConsumerConfig.
-//
-// This loads the JSON file and validates the config from it. If
-// either step fails, this returns a nil config and an error, so a
-// non-nil config is always valid.
+// ReadConfigFromJSON reads and validates the config in filename. A
+// non-nil result is always valid.
 func ReadConfigFromJSON(filename string) (*ConsumerConfig, error) {
 	file, err := os.ReadFile(filename)
 	if err != nil {

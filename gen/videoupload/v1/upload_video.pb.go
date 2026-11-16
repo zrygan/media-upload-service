@@ -86,12 +86,17 @@ func (VideoUploadStatus) EnumDescriptor() ([]byte, []int) {
 // duplicate detection extra credit. The signature is the perceptual
 // hash of the video, computed via video dHash.
 type VideoUploadInfo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	FileName      string                 `protobuf:"bytes,1,opt,name=file_name,json=fileName,proto3" json:"file_name,omitempty"`
-	FileSize      int64                  `protobuf:"varint,2,opt,name=file_size,json=fileSize,proto3" json:"file_size,omitempty"`
-	ProducerId    int32                  `protobuf:"varint,3,opt,name=producer_id,json=producerId,proto3" json:"producer_id,omitempty"`
-	Hash          []byte                 `protobuf:"bytes,4,opt,name=hash,proto3" json:"hash,omitempty"`
-	Signature     []uint64               `protobuf:"fixed64,5,rep,packed,name=signature,proto3" json:"signature,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	FileName   string                 `protobuf:"bytes,1,opt,name=file_name,json=fileName,proto3" json:"file_name,omitempty"`
+	FileSize   int64                  `protobuf:"varint,2,opt,name=file_size,json=fileSize,proto3" json:"file_size,omitempty"`
+	ProducerId int32                  `protobuf:"varint,3,opt,name=producer_id,json=producerId,proto3" json:"producer_id,omitempty"`
+	Hash       []byte                 `protobuf:"bytes,4,opt,name=hash,proto3" json:"hash,omitempty"`
+	Signature  []uint64               `protobuf:"fixed64,5,rep,packed,name=signature,proto3" json:"signature,omitempty"`
+	// The byte in the file where the first data chunk starts. This is
+	// the value GetUploadOffset returned. 0 means a fresh upload from
+	// the start of the file, which is also what a producer that does
+	// not set this field sends.
+	Offset        int64 `protobuf:"varint,6,opt,name=offset,proto3" json:"offset,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -159,6 +164,13 @@ func (x *VideoUploadInfo) GetSignature() []uint64 {
 		return x.Signature
 	}
 	return nil
+}
+
+func (x *VideoUploadInfo) GetOffset() int64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
 }
 
 // Request message for UploadVideo. This requires the information
@@ -394,18 +406,115 @@ func (x *GetQueueStatusResponse) GetCurrSize() int32 {
 	return 0
 }
 
+// Request message for GetUploadOffset. The video is identified by its
+// SHA-256 hash (the same value as VideoUploadInfo.hash), not by its
+// file name, since two producers can have different videos with the
+// same name.
+type GetUploadOffsetRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Hash          []byte                 `protobuf:"bytes,1,opt,name=hash,proto3" json:"hash,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetUploadOffsetRequest) Reset() {
+	*x = GetUploadOffsetRequest{}
+	mi := &file_videoupload_v1_upload_video_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUploadOffsetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUploadOffsetRequest) ProtoMessage() {}
+
+func (x *GetUploadOffsetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_videoupload_v1_upload_video_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUploadOffsetRequest.ProtoReflect.Descriptor instead.
+func (*GetUploadOffsetRequest) Descriptor() ([]byte, []int) {
+	return file_videoupload_v1_upload_video_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *GetUploadOffsetRequest) GetHash() []byte {
+	if x != nil {
+		return x.Hash
+	}
+	return nil
+}
+
+// Response message for GetUploadOffset. offset is the number of bytes
+// of the video the consumer has already stored, which is also the
+// byte the producer should continue from. 0 means the consumer has
+// nothing for this hash, so the upload starts from the beginning.
+type GetUploadOffsetResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Offset        int64                  `protobuf:"varint,1,opt,name=offset,proto3" json:"offset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetUploadOffsetResponse) Reset() {
+	*x = GetUploadOffsetResponse{}
+	mi := &file_videoupload_v1_upload_video_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUploadOffsetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUploadOffsetResponse) ProtoMessage() {}
+
+func (x *GetUploadOffsetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_videoupload_v1_upload_video_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUploadOffsetResponse.ProtoReflect.Descriptor instead.
+func (*GetUploadOffsetResponse) Descriptor() ([]byte, []int) {
+	return file_videoupload_v1_upload_video_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *GetUploadOffsetResponse) GetOffset() int64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
 var File_videoupload_v1_upload_video_proto protoreflect.FileDescriptor
 
 const file_videoupload_v1_upload_video_proto_rawDesc = "" +
 	"\n" +
-	"!videoupload/v1/upload_video.proto\x12\x0evideoupload.v1\"\x9e\x01\n" +
+	"!videoupload/v1/upload_video.proto\x12\x0evideoupload.v1\"\xb6\x01\n" +
 	"\x0fVideoUploadInfo\x12\x1b\n" +
 	"\tfile_name\x18\x01 \x01(\tR\bfileName\x12\x1b\n" +
 	"\tfile_size\x18\x02 \x01(\x03R\bfileSize\x12\x1f\n" +
 	"\vproducer_id\x18\x03 \x01(\x05R\n" +
 	"producerId\x12\x12\n" +
 	"\x04hash\x18\x04 \x01(\fR\x04hash\x12\x1c\n" +
-	"\tsignature\x18\x05 \x03(\x06R\tsignature\"u\n" +
+	"\tsignature\x18\x05 \x03(\x06R\tsignature\x12\x16\n" +
+	"\x06offset\x18\x06 \x01(\x03R\x06offset\"u\n" +
 	"\x12UploadVideoRequest\x12>\n" +
 	"\tfile_info\x18\x01 \x01(\v2\x1f.videoupload.v1.VideoUploadInfoH\x00R\bfileInfo\x12\x14\n" +
 	"\x04data\x18\x02 \x01(\fH\x00R\x04dataB\t\n" +
@@ -415,16 +524,21 @@ const file_videoupload_v1_upload_video_proto_rawDesc = "" +
 	"\x15GetQueueStatusRequest\"P\n" +
 	"\x16GetQueueStatusResponse\x12\x19\n" +
 	"\bmax_size\x18\x01 \x01(\x05R\amaxSize\x12\x1b\n" +
-	"\tcurr_size\x18\x02 \x01(\x05R\bcurrSize*\xb4\x01\n" +
+	"\tcurr_size\x18\x02 \x01(\x05R\bcurrSize\",\n" +
+	"\x16GetUploadOffsetRequest\x12\x12\n" +
+	"\x04hash\x18\x01 \x01(\fR\x04hash\"1\n" +
+	"\x17GetUploadOffsetResponse\x12\x16\n" +
+	"\x06offset\x18\x01 \x01(\x03R\x06offset*\xb4\x01\n" +
 	"\x11VideoUploadStatus\x12#\n" +
 	"\x1fVIDEO_UPLOAD_STATUS_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15VIDEO_UPLOAD_ACCEPTED\x10\x01\x12#\n" +
 	"\x1fVIDEO_UPLOAD_DROPPED_QUEUE_FULL\x10\x02\x12\"\n" +
 	"\x1eVIDEO_UPLOAD_DROPPED_DUPLICATE\x10\x03\x12\x16\n" +
-	"\x12VIDEO_UPLOAD_ERROR\x10\x042\xcf\x01\n" +
+	"\x12VIDEO_UPLOAD_ERROR\x10\x042\xb3\x02\n" +
 	"\x12VideoUploadService\x12X\n" +
 	"\vUploadVideo\x12\".videoupload.v1.UploadVideoRequest\x1a#.videoupload.v1.UploadVideoResponse(\x01\x12_\n" +
-	"\x0eGetQueueStatus\x12%.videoupload.v1.GetQueueStatusRequest\x1a&.videoupload.v1.GetQueueStatusResponseBIZGgithub.com/zrygan/media-upload-service/gen/videoupload/v1;videouploadv1b\x06proto3"
+	"\x0eGetQueueStatus\x12%.videoupload.v1.GetQueueStatusRequest\x1a&.videoupload.v1.GetQueueStatusResponse\x12b\n" +
+	"\x0fGetUploadOffset\x12&.videoupload.v1.GetUploadOffsetRequest\x1a'.videoupload.v1.GetUploadOffsetResponseBIZGgithub.com/zrygan/media-upload-service/gen/videoupload/v1;videouploadv1b\x06proto3"
 
 var (
 	file_videoupload_v1_upload_video_proto_rawDescOnce sync.Once
@@ -439,24 +553,28 @@ func file_videoupload_v1_upload_video_proto_rawDescGZIP() []byte {
 }
 
 var file_videoupload_v1_upload_video_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_videoupload_v1_upload_video_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_videoupload_v1_upload_video_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_videoupload_v1_upload_video_proto_goTypes = []any{
-	(VideoUploadStatus)(0),         // 0: videoupload.v1.VideoUploadStatus
-	(*VideoUploadInfo)(nil),        // 1: videoupload.v1.VideoUploadInfo
-	(*UploadVideoRequest)(nil),     // 2: videoupload.v1.UploadVideoRequest
-	(*UploadVideoResponse)(nil),    // 3: videoupload.v1.UploadVideoResponse
-	(*GetQueueStatusRequest)(nil),  // 4: videoupload.v1.GetQueueStatusRequest
-	(*GetQueueStatusResponse)(nil), // 5: videoupload.v1.GetQueueStatusResponse
+	(VideoUploadStatus)(0),          // 0: videoupload.v1.VideoUploadStatus
+	(*VideoUploadInfo)(nil),         // 1: videoupload.v1.VideoUploadInfo
+	(*UploadVideoRequest)(nil),      // 2: videoupload.v1.UploadVideoRequest
+	(*UploadVideoResponse)(nil),     // 3: videoupload.v1.UploadVideoResponse
+	(*GetQueueStatusRequest)(nil),   // 4: videoupload.v1.GetQueueStatusRequest
+	(*GetQueueStatusResponse)(nil),  // 5: videoupload.v1.GetQueueStatusResponse
+	(*GetUploadOffsetRequest)(nil),  // 6: videoupload.v1.GetUploadOffsetRequest
+	(*GetUploadOffsetResponse)(nil), // 7: videoupload.v1.GetUploadOffsetResponse
 }
 var file_videoupload_v1_upload_video_proto_depIdxs = []int32{
 	1, // 0: videoupload.v1.UploadVideoRequest.file_info:type_name -> videoupload.v1.VideoUploadInfo
 	0, // 1: videoupload.v1.UploadVideoResponse.status:type_name -> videoupload.v1.VideoUploadStatus
 	2, // 2: videoupload.v1.VideoUploadService.UploadVideo:input_type -> videoupload.v1.UploadVideoRequest
 	4, // 3: videoupload.v1.VideoUploadService.GetQueueStatus:input_type -> videoupload.v1.GetQueueStatusRequest
-	3, // 4: videoupload.v1.VideoUploadService.UploadVideo:output_type -> videoupload.v1.UploadVideoResponse
-	5, // 5: videoupload.v1.VideoUploadService.GetQueueStatus:output_type -> videoupload.v1.GetQueueStatusResponse
-	4, // [4:6] is the sub-list for method output_type
-	2, // [2:4] is the sub-list for method input_type
+	6, // 4: videoupload.v1.VideoUploadService.GetUploadOffset:input_type -> videoupload.v1.GetUploadOffsetRequest
+	3, // 5: videoupload.v1.VideoUploadService.UploadVideo:output_type -> videoupload.v1.UploadVideoResponse
+	5, // 6: videoupload.v1.VideoUploadService.GetQueueStatus:output_type -> videoupload.v1.GetQueueStatusResponse
+	7, // 7: videoupload.v1.VideoUploadService.GetUploadOffset:output_type -> videoupload.v1.GetUploadOffsetResponse
+	5, // [5:8] is the sub-list for method output_type
+	2, // [2:5] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
 	2, // [2:2] is the sub-list for extension extendee
 	0, // [0:2] is the sub-list for field type_name
@@ -477,7 +595,7 @@ func file_videoupload_v1_upload_video_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_videoupload_v1_upload_video_proto_rawDesc), len(file_videoupload_v1_upload_video_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   5,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

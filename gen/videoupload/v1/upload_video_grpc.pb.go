@@ -19,8 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	VideoUploadService_UploadVideo_FullMethodName    = "/videoupload.v1.VideoUploadService/UploadVideo"
-	VideoUploadService_GetQueueStatus_FullMethodName = "/videoupload.v1.VideoUploadService/GetQueueStatus"
+	VideoUploadService_UploadVideo_FullMethodName     = "/videoupload.v1.VideoUploadService/UploadVideo"
+	VideoUploadService_GetQueueStatus_FullMethodName  = "/videoupload.v1.VideoUploadService/GetQueueStatus"
+	VideoUploadService_GetUploadOffset_FullMethodName = "/videoupload.v1.VideoUploadService/GetUploadOffset"
 )
 
 // VideoUploadServiceClient is the client API for VideoUploadService service.
@@ -33,6 +34,11 @@ type VideoUploadServiceClient interface {
 	// API for getting the state variables (status) of the video upload
 	// queue.
 	GetQueueStatus(ctx context.Context, in *GetQueueStatusRequest, opts ...grpc.CallOption) (*GetQueueStatusResponse, error)
+	// API for resuming an upload. This returns how many bytes of a video
+	// the consumer already has, so the producer can continue from there
+	// instead of sending the whole file again. The producer calls this
+	// before each UploadVideo attempt.
+	GetUploadOffset(ctx context.Context, in *GetUploadOffsetRequest, opts ...grpc.CallOption) (*GetUploadOffsetResponse, error)
 }
 
 type videoUploadServiceClient struct {
@@ -66,6 +72,16 @@ func (c *videoUploadServiceClient) GetQueueStatus(ctx context.Context, in *GetQu
 	return out, nil
 }
 
+func (c *videoUploadServiceClient) GetUploadOffset(ctx context.Context, in *GetUploadOffsetRequest, opts ...grpc.CallOption) (*GetUploadOffsetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetUploadOffsetResponse)
+	err := c.cc.Invoke(ctx, VideoUploadService_GetUploadOffset_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // VideoUploadServiceServer is the server API for VideoUploadService service.
 // All implementations must embed UnimplementedVideoUploadServiceServer
 // for forward compatibility.
@@ -76,6 +92,11 @@ type VideoUploadServiceServer interface {
 	// API for getting the state variables (status) of the video upload
 	// queue.
 	GetQueueStatus(context.Context, *GetQueueStatusRequest) (*GetQueueStatusResponse, error)
+	// API for resuming an upload. This returns how many bytes of a video
+	// the consumer already has, so the producer can continue from there
+	// instead of sending the whole file again. The producer calls this
+	// before each UploadVideo attempt.
+	GetUploadOffset(context.Context, *GetUploadOffsetRequest) (*GetUploadOffsetResponse, error)
 	mustEmbedUnimplementedVideoUploadServiceServer()
 }
 
@@ -91,6 +112,9 @@ func (UnimplementedVideoUploadServiceServer) UploadVideo(grpc.ClientStreamingSer
 }
 func (UnimplementedVideoUploadServiceServer) GetQueueStatus(context.Context, *GetQueueStatusRequest) (*GetQueueStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetQueueStatus not implemented")
+}
+func (UnimplementedVideoUploadServiceServer) GetUploadOffset(context.Context, *GetUploadOffsetRequest) (*GetUploadOffsetResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetUploadOffset not implemented")
 }
 func (UnimplementedVideoUploadServiceServer) mustEmbedUnimplementedVideoUploadServiceServer() {}
 func (UnimplementedVideoUploadServiceServer) testEmbeddedByValue()                            {}
@@ -138,6 +162,24 @@ func _VideoUploadService_GetQueueStatus_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _VideoUploadService_GetUploadOffset_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetUploadOffsetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VideoUploadServiceServer).GetUploadOffset(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VideoUploadService_GetUploadOffset_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VideoUploadServiceServer).GetUploadOffset(ctx, req.(*GetUploadOffsetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // VideoUploadService_ServiceDesc is the grpc.ServiceDesc for VideoUploadService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -148,6 +190,10 @@ var VideoUploadService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetQueueStatus",
 			Handler:    _VideoUploadService_GetQueueStatus_Handler,
+		},
+		{
+			MethodName: "GetUploadOffset",
+			Handler:    _VideoUploadService_GetUploadOffset_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

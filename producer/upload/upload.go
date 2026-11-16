@@ -37,9 +37,12 @@ const (
 	retryMaxDelay = 30 * time.Second
 )
 
-// isRetryable returns true if err means the consumer could not be reached.
+// isRetryable returns true if trying again could succeed: the consumer
+// could not be reached (codes.Unavailable), or the offset this attempt
+// used was out of date (codes.Aborted). The next attempt asks for the
+// offset again. Other errors would fail the same way every time.
 func isRetryable(err error) bool {
-	return status.Code(err) == codes.Unavailable
+	return (status.Code(err) == codes.Unavailable) || (status.Code(err) == codes.Aborted)
 }
 
 // File uploads the file at path to the consumer and returns the status
@@ -149,15 +152,34 @@ func (job uploadJob) uploadOrTryAgain(ctx context.Context) (videouploadv1.VideoU
 	return statusError, fmt.Errorf("uploadOrTryAgain %s: already tried the maximum number of times (%d): %w", job.file.Name(), retryMaxAttempts, lastErr)
 }
 
-// attemptUpload makes one upload from the start of the file. This has
-// its own uploadTimeout, so each attempt gets the full time.
+// attemptUpload makes one upload attempt. It first asks the consumer
+// how many bytes of this video it already has (GetUploadOffset), then
+// seeks the file to that offset and sends only the rest. The offset is
+// also put in the file info, so the consumer knows where the chunks
+// start. If the consumer has nothing, the offset is 0 and the whole
+// file is sent.
+//
+// Asking again on every attempt matters: between attempts the consumer
+// may have stored more bytes, or restarted and lost them.
+//
+// This has its own uploadTimeout, so each attempt gets the full time.
 func (job uploadJob) attemptUpload(ctx context.Context) (videouploadv1.VideoUploadStatus, error) {
 	ctx, cancel := context.WithTimeout(ctx, uploadTimeout)
 	defer cancel()
 
-	if _, err := job.file.Seek(0, io.SeekStart); err != nil {
+	rOffset, err := job.client.Service.GetUploadOffset(ctx, &videouploadv1.GetUploadOffsetRequest{Hash: job.info.Hash})
+
+	if err != nil {
+		return statusError, fmt.Errorf("attemptUpload %s: %w", job.file.Name(), err)
+	}
+
+	offset := rOffset.GetOffset()
+
+	if _, err := job.file.Seek(offset, io.SeekStart); err != nil {
 		return statusUnknown, err
 	}
+
+	job.info.Offset = offset
 
 	stream, err := job.client.Service.UploadVideo(ctx)
 	if err != nil {
@@ -169,12 +191,12 @@ func (job uploadJob) attemptUpload(ctx context.Context) (videouploadv1.VideoUplo
 		return statusError, fmt.Errorf("attemptUpload %s: %w", job.file.Name(), err)
 	}
 
-	resp, err := stream.CloseAndRecv()
+	rVid, err := stream.CloseAndRecv()
 	if err != nil {
 		return statusError, fmt.Errorf("attemptUpload %s: %w", job.file.Name(), err)
 	}
 
-	return resp.GetStatus(), nil
+	return rVid.GetStatus(), nil
 }
 
 // sendFile sends the file's info as the first message, then the
