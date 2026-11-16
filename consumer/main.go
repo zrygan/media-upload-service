@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/zrygan/media-upload-service/consumer/config"
+	"github.com/zrygan/media-upload-service/consumer/dedup"
 	"github.com/zrygan/media-upload-service/consumer/queue"
 	"github.com/zrygan/media-upload-service/consumer/server"
 	"github.com/zrygan/media-upload-service/consumer/worker"
@@ -67,10 +68,11 @@ func run() error {
 	}
 
 	q := queue.New(cc.QueueMaxSize)
+	idx := dedup.NewIndex()
 
 	// Serve blocks, so it runs on its own goroutine
 	srv := grpc.NewServer()
-	videouploadv1.RegisterVideoUploadServiceServer(srv, server.New(q, cc.StagingFolder))
+	videouploadv1.RegisterVideoUploadServiceServer(srv, server.New(q, idx, cc.StagingFolder))
 	serveErr := make(chan error, 1)
 	go func() {
 		serveErr <- srv.Serve(lis)
@@ -79,7 +81,7 @@ func run() error {
 	slog.Info("server started")
 
 	// done is closed once every worker has returned
-	cws := worker.MakeWorkers(cc.ThreadCount, q, cc.MediaFolder)
+	cws := worker.MakeWorkers(cc.ThreadCount, q, idx, cc.MediaFolder)
 
 	done := make(chan struct{})
 	go func() {

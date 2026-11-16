@@ -4,21 +4,23 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/zrygan/media-upload-service/consumer/dedup"
 	"github.com/zrygan/media-upload-service/consumer/queue"
 )
 
 // MakeWorkers returns a slice of threadCount ConsumerWorker structs.
 // Each worker gets a unique ID, and all of them share the same queue
-// q and save into the same mediaFolder. This does not spawn threads
-// and does not execute the workers. See RunThreads to see how threads
-// are spawned and executed.
-func MakeWorkers(threadCount int, q *queue.Queue, mediaFolder string) []ConsumerWorker {
+// q, duplicate index idx, and save into the same mediaFolder. This does
+// not spawn threads and does not execute the workers. See RunThreads to
+// see how threads are spawned and executed.
+func MakeWorkers(threadCount int, q *queue.Queue, idx *dedup.Index, mediaFolder string) []ConsumerWorker {
 	cws := make([]ConsumerWorker, threadCount)
 
 	for id := 0; id < threadCount; id++ {
 		cws[id] = ConsumerWorker{
 			id:    id,
 			q:     q,
+			idx:   idx,
 			media: mediaFolder,
 		}
 	}

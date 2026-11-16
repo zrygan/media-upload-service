@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"io"
 	"log/slog"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/zrygan/media-upload-service/consumer/dedup"
 	"github.com/zrygan/media-upload-service/consumer/queue"
 	videouploadv1 "github.com/zrygan/media-upload-service/gen/videoupload/v1"
 	"google.golang.org/grpc"
@@ -21,24 +23,25 @@ import (
 // many UploadVideo calls can run at the same time.
 //
 // The fields are only set in New, so the calls can read them without
-// a lock. The queue is the only thing the calls share, and it is safe
-// for concurrent use.
+// a lock. The queue and the duplicate index are the only things the
+// calls share, and both are safe for concurrent use.
 type VideoServer struct {
 	q             *queue.Queue
+	idx           *dedup.Index
 	stagingFolder string
 	// Required by gRPC-Go. This returns codes.Unimplemented for any RPC
 	// that VideoServer does not implement.
 	videouploadv1.UnimplementedVideoUploadServiceServer
 }
 
-// New returns a VideoServer that adds uploads to queue and stages them
-// in the folder path.
+// New returns a VideoServer that checks uploads against idx, adds them
+// to queue, and stages them in the folder path.
 //
 // NOTE: path must be on the same filesystem as the media folder, since
 // the workers move files out of it with os.Rename.
-func New(queue *queue.Queue, path string) *VideoServer {
+func New(queue *queue.Queue, idx *dedup.Index, path string) *VideoServer {
 
-	return &VideoServer{q: queue, stagingFolder: path}
+	return &VideoServer{q: queue, idx: idx, stagingFolder: path}
 }
 
 // UploadVideo receives one video from a producer and adds it to the
@@ -48,16 +51,20 @@ func New(queue *queue.Queue, path string) *VideoServer {
 // This does the following:
 //
 //  1. Reads the file info.
-//  2. Takes a queue permit. If the queue is full, this replies
+//  2. Checks the duplicate index. If the video is a duplicate, this
+//     replies VIDEO_UPLOAD_DROPPED_DUPLICATE before receiving any data.
+//  3. Takes a queue permit. If the queue is full, this removes the
+//     signature from the index and replies
 //     VIDEO_UPLOAD_DROPPED_QUEUE_FULL before receiving any data.
-//  3. Writes the chunks into a temp file in the staging folder.
-//  4. Checks that the bytes received match the file size.
-//  5. Adds the job to the queue and replies VIDEO_UPLOAD_ACCEPTED.
+//  4. Writes the chunks into a temp file in the staging folder.
+//  5. Checks that the bytes received match the file size.
+//  6. Adds the job to the queue and replies VIDEO_UPLOAD_ACCEPTED.
 //
-// A full queue is not an error, it is returned as the status. The
-// error is only for broken uploads, like a stream error, a disk error,
-// or a size mismatch. If this fails, the temp file is removed and the
-// permit is given back.
+// A full queue or a duplicate is not an error, it is returned as the
+// status. The error is only for broken uploads, like a stream error,
+// a disk error, or a size mismatch. If this fails, the temp file is
+// removed, the signature is removed from the index, and the permit is
+// given back.
 func (s *VideoServer) UploadVideo(stream grpc.ClientStreamingServer[videouploadv1.UploadVideoRequest, videouploadv1.UploadVideoResponse]) error {
 
 	first, err := stream.Recv()
@@ -72,7 +79,13 @@ func (s *VideoServer) UploadVideo(stream grpc.ClientStreamingServer[videouploadv
 		return status.Error(codes.InvalidArgument, "First message must be FileInfo")
 	}
 
+	id := hex.EncodeToString(info.Hash)
+	if s.idx.CheckAndInsert(id, info.Signature) {
+		return stream.SendAndClose(&videouploadv1.UploadVideoResponse{Status: videouploadv1.VideoUploadStatus_VIDEO_UPLOAD_DROPPED_DUPLICATE})
+	}
+
 	if s.q.TryReserve() == false {
+		s.idx.Remove(id)
 		return stream.SendAndClose(&videouploadv1.UploadVideoResponse{Status: videouploadv1.VideoUploadStatus_VIDEO_UPLOAD_DROPPED_QUEUE_FULL})
 	}
 
@@ -84,17 +97,20 @@ func (s *VideoServer) UploadVideo(stream grpc.ClientStreamingServer[videouploadv
 	f, err := os.CreateTemp(s.stagingFolder, StagingPrefix+"*"+ext)
 
 	if err != nil {
+		s.idx.Remove(id)
 		s.q.UnReserve()
 		return err
 	}
 
-	// while e is true, any return cleans up the temp file and the
-	// permit. once the job is in the queue, both belong to a worker
+	// while e is true, any return cleans up the temp file, the
+	// duplicate index entry, and the permit. once the job is in the
+	// queue, they belong to a worker
 	e := true
 	defer func() {
 		if e != false {
 			f.Close()
 			os.Remove(f.Name())
+			s.idx.Remove(id)
 			s.q.UnReserve()
 		}
 	}()

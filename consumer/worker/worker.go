@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/zrygan/media-upload-service/consumer/dedup"
 	"github.com/zrygan/media-upload-service/consumer/queue"
 )
 
@@ -15,13 +16,15 @@ import (
 type ConsumerWorker struct {
 	id    int
 	q     *queue.Queue
+	idx   *dedup.Index
 	media string
 }
 
 // run takes jobs off the queue until the queue is closed and empty,
 // and moves each staged file into the media folder. A failed move is
-// logged, the staged file is removed, and the worker continues with
-// the next job. This currently always returns nil.
+// logged, the staged file and its duplicate index entry are removed,
+// and the worker continues with the next job. This currently always
+// returns nil.
 //
 // All workers receive from the same channel, and each job is received
 // by only one worker, so no lock is needed.
@@ -43,10 +46,8 @@ func (c *ConsumerWorker) run() error {
 
 		// saved as <hash>_<name>, filepath.Base keeps it inside the
 		// media folder
-		//
-		// TODO: the hash comes from the producer and is not checked, so
-		// two uploads with the same hash and name overwrite each other
-		newName := hex.EncodeToString(j.Hash) + "_" + filepath.Base(j.FileName)
+		id := hex.EncodeToString(j.Hash)
+		newName := id + "_" + filepath.Base(j.FileName)
 		newPath := filepath.Join(c.media, newName)
 
 		err := os.Rename(j.StagingPath, newPath)
@@ -54,6 +55,7 @@ func (c *ConsumerWorker) run() error {
 		if err != nil {
 			slog.Error("move failed", "file", newPath, "err", err)
 			os.Remove(j.StagingPath)
+			c.idx.Remove(id)
 		}
 
 	}
