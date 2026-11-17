@@ -31,9 +31,15 @@
         align-items:center;
         padding:10px 0;
     }
+    .video-item video {
+        cursor: pointer;
+        background-color: #000;
+    }
     .video-item p {
         margin: 8px 0 0 0;
+        padding: 0 8px;
         text-align: center;
+        overflow-wrap: anywhere;
     }
 </style>
 
@@ -41,30 +47,12 @@
 
 <body>
 
-<h1>[Consumer] Videos Recieved</h1>
-<p>The following are the videos recieved from the producers, in order.</p>
+<h1>[Consumer] Videos Received</h1>
+<p>The videos received from the producers, oldest first. Hover to preview the first 10 seconds, click to play the whole video.</p>
+<p id="status"></p>
 
-<!-- NOTE: all currently hard-coded since I haven't implemented backend logic yet-->
-<div class = "video-grid-container">
-    <!-- <div class = "video-item" controls>
-        <video width="320" height="240" >
-
-        <source src="vid1.mp4" type="video/mp4">
-        </video>
-    </div>
-    <div class = "video-item">
-        wefewf
-    </div>
-    <div class = "video-item">
-        wefewf
-    </div>
-    <div class = "video-item">
-        wefewf
-    </div>
-    <div class = "video-item">
-        wefewf
-    </div> -->
-</div>
+<!-- filled in by index.js -->
+<div class = "video-grid-container"></div>
 
 </body>
 </html>

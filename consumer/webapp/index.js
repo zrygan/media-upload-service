@@ -1,101 +1,120 @@
-// const video = document.querySelector("video");
+// Hover: plays the first 10 seconds, muted (browsers block sound until
+// the user clicks). Click: plays the whole video fullscreen with sound
+// and controls. Esc leaves fullscreen.
+
+const PREVIEW_MS = 10000;
+const REFRESH_MS = 3000;
+
+let previewTimer = null;
 
 function startPreview(video) {
-  video.currentTime = 1;
-  video.playbackRate = 1;
-  video.play();
+  clearTimeout(previewTimer);
+  video.muted = true;
+  video.currentTime = 0;
+  video.play().catch(() => {});
+  previewTimer = setTimeout(() => stopPreview(video), PREVIEW_MS);
 }
 
 function stopPreview(video) {
-  video.currentTime = 0;
-  video.playbackRate = 1;
+  clearTimeout(previewTimer);
+  previewTimer = null;
   video.pause();
+  video.currentTime = 0;
 }
 
-let previewTimeout = null;
+function playFull(video) {
+  // without this, the preview timer would stop the video after 10s
+  clearTimeout(previewTimer);
+  previewTimer = null;
+  video.controls = true;
+  video.muted = false;
+  video.volume = 0.5;
+  video.currentTime = 0;
+  video.play().catch(() => {});
+}
 
-document.addEventListener('DOMContentLoaded', async () => {
-  const videoContainer = document.querySelector('.video-grid-container');
-  
-  if (!videoContainer) {
+// addVideo builds the item with textContent, not innerHTML, because
+// the title is a file name sent by a producer and must not run as HTML
+function addVideo(container, v) {
+  const item = document.createElement("div");
+  item.className = "video-item";
+
+  const video = document.createElement("video");
+  video.width = 320;
+  video.height = 240;
+  video.preload = "metadata";
+  video.muted = true;
+  video.src = v.url;
+
+  const title = document.createElement("p");
+  title.textContent = v.title;
+
+  item.append(video, title);
+  container.append(item);
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const container = document.querySelector(".video-grid-container");
+  const status = document.querySelector("#status");
+  if (!container) {
     console.error("could not find the target container");
     return;
   }
 
-  videoContainer.addEventListener("mouseover", (event) => {
+  container.addEventListener("mouseover", (event) => {
     const video = event.target.closest("video");
-    if (!video) return;
-
-    if (document.fullscreenElement) return;
-
-    if(video.dataset.previewing === "1") return;
+    if (!video || document.fullscreenElement) return;
+    if (video.dataset.previewing === "1") return;
     video.dataset.previewing = "1";
-
     startPreview(video);
-    previewTimeout = setTimeout(() => stopPreview(video), 10000);
   });
 
-  videoContainer.addEventListener("mouseout", (event) => {
+  container.addEventListener("mouseout", (event) => {
     const video = event.target.closest("video");
-    if (!video) return;
-
+    if (!video || document.fullscreenElement) return;
     video.dataset.previewing = "0";
-    clearTimeout(previewTimeout);
-    previewTimeout = null;
-
     stopPreview(video);
   });
 
-  videoContainer.addEventListener("click", (event) => {
-      const video = event.target.closest("video");
-      if (!video) return;
-
-      if (event.target.tagName !== 'VIDEO' && document.fullscreenElement) return;
-
-      if(document.fullscreenElement){
-        document.exitFullscreen();
-      }
-      else{
-        video.requestFullscreen();
-        video.setAttribute("controls", "");
-        video.volume = 0.5;
-      }
-
+  container.addEventListener("click", (event) => {
+    const video = event.target.closest("video");
+    // in fullscreen, clicks go to the video's own controls
+    if (!video || document.fullscreenElement) return;
+    playFull(video);
+    video.requestFullscreen().catch(() => {}); // still plays if refused
   });
 
-  document.addEventListener("fullscreenchange", () =>{
-    const videos = document.querySelectorAll('video');
-    if(!document.fullscreenElement){
-      videos.forEach(v => {
-        v.removeAttribute('controls');
-        v.dataset.previewing = "0";
-      });
-    }
-  });
-
-  try {
-    const response = await fetch('/api/videos/');
-    const videoURLs = await response.json();
-
-    videoContainer.innerHTML = '';
-
-    videoURLs.forEach(v => {
-      const videoElement = `
-      <div class = "video-item" controls>
-          <video width="320" height="240" >
-            <source src="${v.url}" type="video/mp4">
-            yo video wont load
-          </video>
-          <p>${v.title}</p>
-      </div>
-      `;
-
-      videoContainer.innerHTML += videoElement;
+  document.addEventListener("fullscreenchange", () => {
+    if (document.fullscreenElement) return;
+    document.querySelectorAll("video").forEach((v) => {
+      if (!v.controls) return;
+      v.controls = false;
+      v.dataset.previewing = "0";
+      v.muted = true;
+      stopPreview(v);
     });
-  } catch(err) {
-    console.error("failed to load videos: ", err);
-    videoContainer.innerHTML = `
-      <p>error loading videos</p>
-    `;
+  });
+
+  // urls already on the page; the list only grows, oldest first
+  const shown = new Set();
+
+  async function refresh() {
+    try {
+      const response = await fetch("/api/videos/");
+      if (!response.ok) throw new Error(response.statusText);
+      const videos = await response.json();
+      for (const v of videos) {
+        if (shown.has(v.url)) continue;
+        shown.add(v.url);
+        addVideo(container, v);
+      }
+      status.textContent = shown.size === 0 ? "No videos yet." : "";
+    } catch (err) {
+      console.error("failed to load videos: ", err);
+      status.textContent = "Error loading videos.";
+    }
   }
+
+  refresh();
+  setInterval(refresh, REFRESH_MS);
 });
