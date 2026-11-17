@@ -16,11 +16,12 @@ To run with Docker you only need [Docker Desktop](https://www.docker.com/product
 | --- | --- |
 | `producer/` | Producer program and its `Dockerfile` |
 | `consumer/` | Consumer program and its `Dockerfile` |
+| `consumer/webapp/` | The consumer's GUI: a small web server and page that show the saved videos |
 | `configs/` | JSON config files, mounted into the containers |
 | `videos/` | Videos to upload, one subfolder per producer thread (not committed) |
 | `data/media/` | Where the consumer saves uploaded videos (not committed) |
 | `data/staging/` | Where the consumer keeps uploads that are still arriving, before moving them to `data/media/` (not committed) |
-| `docker-compose.yaml` | Builds and runs the producer and consumer together |
+| `docker-compose.yaml` | Builds and runs the producer, consumer and GUI together |
 
 ## Build without Docker
 
@@ -29,6 +30,7 @@ From the repo root:
 ```sh
 go build -o producer-bin ./producer
 go build -o consumer-bin ./consumer
+go build -o webapp-bin ./consumer/webapp
 ```
 
 The producer reads its config from `.configs/producer.json` by default. Use `-config <path>` to point it somewhere else:
@@ -36,6 +38,14 @@ The producer reads its config from `.configs/producer.json` by default. Use `-co
 ```sh
 ./producer-bin -config configs/producer.json
 ```
+
+The GUI is a separate program on the consumer's machine. It only reads the consumer's media folder (`./data/media` by default) and serves the page on port `8008`:
+
+```sh
+./webapp-bin                      # or: -media <folder> -addr :8008
+```
+
+Open <http://localhost:8008>. Hover over a video to preview its first 10 seconds, and click it to play the whole video fullscreen. New videos appear on their own within a few seconds.
 
 ## Run with Docker Compose
 
@@ -91,7 +101,7 @@ From the repo root:
 docker compose up --build
 ```
 
-Compose builds both images, creates the `backend` network (`172.28.0.0/24`), and starts the consumer first, then the producer.
+Compose builds the images, creates the `backend` network (`172.28.0.0/24`), and starts the consumer first, then the producer. The GUI starts too: open <http://localhost:8008>.
 
 To stop everything, press `Ctrl+C`, then run:
 
@@ -104,6 +114,7 @@ docker compose down
 | Service | Address on `backend` | Ports published on the host | Mounts |
 | --- | --- | --- | --- |
 | `consumer` | `172.28.0.10` | `9090` → `9090` (gRPC) | `./configs` → `/workspace/.configs` (read-only), `./data` → `/workspace/data` |
+| `gui` | none (default network) | `8008` → `8008` (web page) | `./data` → `/workspace/data` (read-only) |
 | `producer` | `172.28.0.11` | none | `./configs` → `/workspace/.configs` (read-only), `./videos` → `/videos` (read-only) |
 
 Check the Compose file without building anything:
@@ -119,8 +130,10 @@ The producer and consumer are built and run independently, so each can go on its
 **Consumer VM:**
 
 ```sh
-docker compose up --build consumer
+docker compose up --build consumer gui
 ```
+
+The GUI is part of the consumer, so it runs on this VM. Open `http://<consumer VM IP>:8008`.
 
 **Producer VM:**
 
@@ -131,4 +144,4 @@ docker compose up --build consumer
    docker compose up --build --no-deps producer
    ```
 
-Make sure the consumer VM's firewall allows incoming connections on port `9090`.
+Make sure the consumer VM's firewall allows incoming connections on port `9090`, and on `8008` if you open the GUI from another machine.
