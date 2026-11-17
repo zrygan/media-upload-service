@@ -6,6 +6,8 @@
 
 Go, FFmpeg
 
+Without Docker, `ffmpeg` must be on your `PATH` for both programs. The producer uses it for duplicate detection, and the consumer's workers use it to compress each video (H.264, at most 720p) before saving it. If compression fails or doesn't make the file smaller, the consumer saves the original. Both Docker images install FFmpeg for you.
+
 To run with Docker you only need [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker Engine with the Compose plugin). Go is installed inside the images.
 
 ## Project layout

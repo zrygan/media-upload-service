@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"log/slog"
 	"sync"
 
@@ -31,12 +32,13 @@ func MakeWorkers(threadCount int, q *queue.Queue, idx *dedup.Index, mediaFolder 
 
 // RunThreads runs each worker on its own goroutine and blocks until all
 // of them return, which happens once the queue is closed and empty.
-func RunThreads(cws []ConsumerWorker) {
+// When ctx ends, running compressions stop and the originals are saved.
+func RunThreads(ctx context.Context, cws []ConsumerWorker) {
 	var wg sync.WaitGroup
 
 	for i := range cws {
 		wg.Go(func() {
-			if err := cws[i].run(); err != nil {
+			if err := cws[i].run(ctx); err != nil {
 				slog.Error("worker failed", "component", "worker", "worker_id", cws[i].id, "error", err)
 			}
 		})

@@ -10,9 +10,12 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 go build -o /out/consumer ./consumer
 
 # run stage
-FROM gcr.io/distroless/static-debian12
+FROM debian:bookworm-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /workspace
 COPY --from=build /out/consumer /consumer
-USER nonroot
+USER 65532:65532
 EXPOSE 9090
 ENTRYPOINT ["/consumer"]

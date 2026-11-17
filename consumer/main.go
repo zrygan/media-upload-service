@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"sync"
 	"syscall"
@@ -37,7 +38,8 @@ func main() {
 //  2. q.Close: must come after 1, since enqueueing to a closed queue
 //     panics.
 //  3. <-done: the workers empty the queue, so every accepted upload is
-//     saved.
+//     saved. After Ctrl+C or SIGTERM, ctx is already canceled, so they
+//     skip compression and save the originals.
 func run() error {
 
 	configPath := flag.String("config", ".configs/consumer.json", "path to the consumer config")
@@ -46,6 +48,12 @@ func run() error {
 	cc, err := config.ReadConfigFromJSON(*configPath)
 	if err != nil {
 		return err
+	}
+
+	// workers fall back to the original when ffmpeg fails, so a missing
+	// ffmpeg would otherwise go unnoticed
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		slog.Warn("ffmpeg not found, videos will be saved uncompressed", "error", err)
 	}
 
 	// before the server starts (see CleanStaging)
@@ -84,7 +92,7 @@ func run() error {
 	// done is closed once every worker has returned
 	done := make(chan struct{})
 	go func() {
-		worker.RunThreads(cws)
+		worker.RunThreads(ctx, cws)
 		close(done)
 	}()
 
