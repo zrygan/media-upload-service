@@ -6,11 +6,22 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	videouploadv1 "github.com/zrygan/media-upload-service/gen/videoupload/v1"
 	"github.com/zrygan/media-upload-service/producer/network"
 	"github.com/zrygan/media-upload-service/producer/upload"
 )
+
+// videoExts lists the lowercase file extensions a worker uploads. It is
+// never written after init, so all workers can read it without a lock.
+var videoExts = map[string]bool{
+	".mp4": true, ".m4v": true, ".mov": true,
+	".mkv": true, ".webm": true, ".avi": true,
+	".wmv": true, ".flv": true, ".mpg": true,
+	".mpeg": true, ".3gp": true, ".ogv": true,
+	".ts": true,
+}
 
 // RunSummary holds the upload counts of one ProducerWorker. numSent
 // counts every upload that was attempted, so it is always the sum of
@@ -23,7 +34,7 @@ type RunSummary struct {
 	numFailed    int
 }
 
-// ProducerWorker uploads every file in one folder to the consumer. Each
+// ProducerWorker uploads every video in one folder to the consumer. Each
 // ProducerWorker runs on its own goroutine/thread, see RunThreads.
 type ProducerWorker struct {
 	id         int
@@ -31,13 +42,15 @@ type ProducerWorker struct {
 	rs         RunSummary
 }
 
-// run uploads each file in the worker's folder, skipping subfolders,
-// then logs the worker's RunSummary. A failed upload is logged and
+// run uploads each video in the worker's folder, then logs the worker's
+// RunSummary. Subfolders and files whose extension is not in videoExts
+// are skipped and not counted as sent. A failed upload is logged and
 // counted, and the worker continues with the next file. If ctx is
 // cancelled, the worker stops before starting another upload.
 //
 // This returns an error only if the folder cannot be read.
 func (pw *ProducerWorker) run(ctx context.Context, client *network.Client) error {
+
 	folder, err := os.ReadDir(pw.folderName)
 	if err != nil {
 		return fmt.Errorf("worker %d could not open its assigned folder %s: %w",
@@ -51,6 +64,18 @@ func (pw *ProducerWorker) run(ctx context.Context, client *network.Client) error
 		}
 
 		if video.IsDir() {
+			continue
+		}
+
+		vidExt := filepath.Ext(video.Name())
+
+		if !videoExts[strings.ToLower(vidExt)] {
+			slog.Info("skipped non-video file",
+				"component", "worker",
+				"worker_id", pw.id,
+				"file", video.Name(),
+				"ext", vidExt,
+			)
 			continue
 		}
 
