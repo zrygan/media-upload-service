@@ -2,6 +2,12 @@
 
 > Also see: <https://github.com/zrygan/fault-tolerant-ems>
 
+## Group Members:
+- Aragon, Enrique Miguel
+- Borja, Stephen
+- Chua, Erin Gabrielle
+- Ganituen, Zhean Robby
+
 ## Dependencies
 
 Go, FFmpeg
