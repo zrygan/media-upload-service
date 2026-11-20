@@ -13,7 +13,18 @@ services:
       # One mount for staging and media, so moving a finished upload
       # from staging to media is a same-filesystem rename.
       - ./data:/workspace/data
-    
+
+  # The consumer's GUI, from the consumer image. It only reads the
+  # media folder, so it needs no gRPC network and mounts data read-only.
+  gui:
+    build:
+      context: .
+      dockerfile: ./consumer/Dockerfile
+    entrypoint: ["/webapp"]
+    ports:
+      - 8008:8008
+    volumes:
+      - ./data:/workspace/data:ro
 
   producer:
     build: 

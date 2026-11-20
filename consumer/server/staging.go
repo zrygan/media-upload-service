@@ -11,9 +11,14 @@ import (
 	"time"
 )
 
-// StagingPrefix starts every staging file name. CleanStaging only
-// touches files that have it.
+// StagingPrefix starts every upload's staging file name. CleanStaging
+// only touches files that start with it or with CompressPrefix.
 const StagingPrefix = "upload-"
+
+// CompressPrefix starts the name of a worker's compressed copy while
+// ffmpeg writes it. Nothing resumes from these, so CleanStaging always
+// removes them.
+const CompressPrefix = "compress-"
 
 // StagingExt ends the name of an unfinished upload that can be resumed.
 const StagingExt = ".part"
@@ -23,10 +28,11 @@ const StagingExt = ".part"
 const stagingMaxAge = 24 * time.Hour
 
 // CleanStaging removes leftovers from dir and returns how many it
-// removed: .part files not written to within stagingMaxAge, and any
-// other StagingPrefix file (random names from older versions). Recent
-// .part files stay so they can resume. Files without StagingPrefix are
-// never touched, in case dir is misconfigured.
+// removed: .part files not written to within stagingMaxAge, any other
+// StagingPrefix file (random names from older versions), and every
+// CompressPrefix file (from a crash while compressing). Recent .part
+// files stay so they can resume. Files with neither prefix are never
+// touched, in case dir is misconfigured.
 //
 // Call it before the server starts, so it can't remove a live upload.
 // The error is only for when dir can't be read.
@@ -38,7 +44,8 @@ func CleanStaging(dir string) (int, error) {
 
 	removed := 0
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasPrefix(e.Name(), StagingPrefix) {
+		ours := strings.HasPrefix(e.Name(), StagingPrefix) || strings.HasPrefix(e.Name(), CompressPrefix)
+		if e.IsDir() || !ours {
 			continue // not ours: leave it alone
 		}
 
