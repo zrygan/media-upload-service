@@ -346,7 +346,6 @@ This affects how the producer treats a drop:
       [`DROPPED_DUPLICATE`], [Move on], [The consumer already has the video],
       [Any other gRPC error], [Fail the file], [We treat only a lost connection as temporary],
       [Local read or `ffmpeg` error], [Fail the file], [The problem is the file, not the network],
-      [`codes.Unavailable`], [Retry], [The consumer may come back],
       [`codes.Aborted`], [Retry], [The offset we used was out of date, so the next attempt asks again],
       [Any other gRPC error], [Fail the file], [Only a lost connection or a stale offset  is temporary],
     )
@@ -632,17 +631,23 @@ This affects how the producer treats a drop:
 #align(center)[
   #text(size: 14pt)[
     #table(
-      columns: (1.3fr, 2.4fr),
-      align: (left, left),
+      columns: (1.6fr, 0.9fr, 2.5fr),
+      align: (left, left, left),
       stroke: table-stroke,
       fill: table-fill,
-      table.header([*Situation*], [*What happens*]),
-      [Compression fails, times out, or is cancelled], [The original is saved],
-      [The compressed file isn’t smaller], [The original is saved],
-      [The rename fails], [Both copies are removed, the job is logged as failed, and the index entry is removed],
+      table.header([*Situation*], [*Where*], [*What happens*]),
+      [Extension is not a video type, like `notes.txt`], [Producer], [Skipped and logged. It is not counted in `sent` and nothing is uploaded],
+      [Video extension, but corrupt or not really a video], [Producer], [`ffmpeg` fails while computing the signature. The file is counted as `failed`, is not retried, and never reaches the consumer],
+      [Upload ends early or has the wrong size], [Consumer], [The `.part` file is deleted and the consumer returns `InvalidArgument`. The producer counts it as `failed`],
+      [Passes the signature step but compression fails], [Consumer], [`ffmpeg` fails, times out, or is cancelled, so the original is saved as is],
     )
   ]
 ]
+
+#set text(size: 18pt)
+- The producer is the main filter. Its extension check and `ffmpeg` step stop bad files before any video data is sent.
+- The consumer does not check extensions, so a bad file that reached it would be saved uncompressed.
+#set text(size: 20pt)
 
 #pagebreak()
 == Sending the File
@@ -830,11 +835,85 @@ This affects how the producer treats a drop:
 )x
 
 #pagebreak()
-== Key Steps
+== Consumer Key Steps
 *For each upload*
 #mermaid("flowchart LR
   A[Metadata] --> B[Duplicate check] --> C[Claim hash] --> D[Reserve slot] --> E[Append to .part] --> F[Queue job]
 ")
+
+#pagebreak()
+== Resuming a Partial File
+#grid(
+  columns: (1.5fr, 1fr),
+  gutter: 24pt,
+  [
+    #highlighted-code(size: 10pt, lines: (2, 7, 8, 9, 10, 14))[
+      ```go
+      // no O_TRUNC: a resume keeps the bytes already there
+      f, err := os.OpenFile(tempPath, os.O_CREATE|os.O_WRONLY, 0o644)
+      // ... Stat the file ...
+      tempOffset := st.Size()
+
+      switch {
+      case tempOffset < info.Offset:
+        return status.Error(codes.Aborted, "offset mismatch")
+      case tempOffset > info.Offset:
+        f.Truncate(info.Offset)
+        tempOffset = info.Offset
+      }
+
+      f.Seek(info.Offset, io.SeekStart)
+      // ... append each chunk, then check the final size ...
+      ```
+    ]],
+  [
+    #set text(size: 16pt)
+    Each upload writes to `upload-<hash>.part`. The name depends only on the SHA-256, so every attempt for the same video finds the same file.
+
+    `GetUploadOffset` returns the size of that file, or 0 if it does not exist. The producer sends that number as `offset` in its metadata.
+
+    The consumer then compares the file's size with `offset`:
+    - *Equal:* append from there.
+    - *File shorter:* the producer's offset is out of date. The consumer returns `Aborted`, and the producer asks again.
+    - *File longer:* it cuts the file back to `offset`, since the producer is about to resend those bytes.
+
+    A file with the wrong final size is deleted, so a bad `.part` is never resumed.
+  ],
+)
+
+#pagebreak()
+== Saving a Video
+#grid(
+  columns: (1.5fr, 1fr),
+  gutter: 24pt,
+  [
+    #highlighted-code(size: 10pt, lines: (1, 3, 9, 14))[
+      ```go
+      keep, discard := c.pick(jobCtx, j.StagingPath, compressPath)
+
+      c.mut.Lock()
+      defer c.mut.Unlock()
+
+      // ... choose "name.ext", then "name (1).ext", and so on,
+      //     until a name is free in the media folder ...
+
+      if err := os.Rename(keep, dst); err != nil {
+        os.Remove(keep)
+        os.Remove(discard)
+        return fmt.Errorf(...)
+      }
+      os.Remove(discard)
+      ```
+    ]],
+  [
+    #set text(size: 16pt)
+    Compression runs *before* the lock, so workers compress in parallel.
+
+    The mutex covers only the name check and the rename, so two workers cannot pick the same name.
+
+    `os.Rename` is atomic, so nobody sees a half-written video. The other copy is deleted only after it succeeds.
+  ],
+)
 
 *For each job, on one of $c$ workers*
 #mermaid("flowchart LR
@@ -862,7 +941,7 @@ The producer cannot access the queue directly. It only receives a status for eac
       [`VIDEO_UPLOAD_ACCEPTED`], [The consumer accepted the video], [`accepted`],
       [`VIDEO_UPLOAD_DROPPED_QUEUE_FULL`], [The queue already holds $q$ videos], [`dropped`],
       [`VIDEO_UPLOAD_DROPPED_DUPLICATE`], [The consumer already has the video], [`duplicate`],
-      [`VIDEO_UPLOAD_ERROR`], [The upload failed on the consumer], [`failed`],
+      [`VIDEO_UPLOAD_ERROR`], [Reserved. The consumer reports failures as gRPC errors.], [`failed`],
     )
   ]
 ]
@@ -875,12 +954,14 @@ Any status other than `ACCEPTED` is logged as a warning.
   columns: (1fr, 1fr),
   gutter: 24pt,
   [
-    #mermaid("sequenceDiagram
+     #mermaid("sequenceDiagram
       participant P as Producer
       participant C as Consumer
+      P->>C: GetUploadOffset
+      C-->>P: offset
       P->>C: file_info
-      Note over C: Queue full?
-      C-->>P: DROPPED_QUEUE_FULL
+      Note over C: Duplicate? Queue full?
+      C-->>P: DROPPED_DUPLICATE or DROPPED_QUEUE_FULL
       Note over P,C: No video data is sent
     ")
   ],
@@ -935,20 +1016,19 @@ Any status other than `ACCEPTED` is logged as a warning.
 #pagebreak()
 == Signaling a Queue is Full
 The producer cannot access the queue directly. It only receives a status for each upload.
-- UploadVideo replies DROPPED_QUEUE_FULL when TryReserve fails. This is after the duplicate and in-flight checks.
-- GetQueueStatus returns MaxSize and CurrSize, which is the number of permits in use, including uploads still arriving.
-- It is a snapshot, so a free slot can be gone by the next upload.
-- The producer doesn’t call it yet, so keep that line from the old placeholder.
+- `UploadVideo` replies `DROPPED_QUEUE_FULL` when `TryReserve` fails, after the duplicate and in-flight checks.
+- `GetQueueStatus` returns `MaxSize` and `CurrSize`, the permits in use, including uploads still arriving.
+- It is only a snapshot, so a free slot can be gone by the next upload.
+- The producer does not call it yet. It only reacts to the status of each upload.
 
 #pagebreak()
 == Interrupted and Retried Uploads
 - Upload dies midway: the slot, hash and index entry are released, and the .part file is kept.
 - Producer asks for its offset: GetUploadOffset returns the .part size, or 0.
-- .part shorter than the producer’s offset: Aborted, so the producer asks again.
-- .part longer than the offset: truncate to the offset.
+- `.part` shorter than the producer’s offset: Aborted, so the producer asks again.
+- `.part` longer than the offset: truncate to the offset.
 - Final size wrong: delete the .part and return InvalidArgument.
 - Producer never returns: CleanStaging removes .part files older than 24 h at startup.
-- Saved but the response was lost: as the code stands, the retry gets DROPPED_DUPLICATE. See check 1 above.
 
 #pagebreak()
 
@@ -1020,12 +1100,13 @@ The producer does not need a mutex, because its workers do not share any mutable
       stroke: table-stroke,
       fill: table-fill,
       table.header([*Mechanism*], [*Where*], [*What it guarantees*]),
-      [`sync.WaitGroup`], [`RunThreads`], [The program does not exit during an upload],
-      [One worker, one folder], [`ProducerWorker`], [Workers do not compete for files, and counters need no lock],
-      [`grpc.ClientConn`], [Shared by all], [Concurrent uploads are safe, with one stream each],
-      [`context` cancellation], [All blocking work], [A shutdown stops RPCs, `ffmpeg`, and retry waits],
-      [`select` on `ctx.Done()`], [Retry wait], [A waiting worker wakes up on shutdown],
-      [HTTP/2 flow control], [`stream.Send`], [A slow consumer slows the sender, which limits memory use],
+      [`reserve` channel, non-blocking send], [`Queue`], [Never more than $q$ slots, and a drop never blocks],
+      [Job channel], [`Queue`], [Each job goes to exactly one worker],
+      [`Index.mu`], [`dedup`], [Check and insert are atomic, so two identical uploads cannot both pass],
+      [`Hashbrowns.mut`], [`inflight`], [Only one stream writes a given video],
+      [Name mutex], [`worker`], [Two workers cannot pick the same file name],
+      [`os.Rename`], [`worker`], [A video appears in the media folder whole],
+      [Close queue after `GracefulStop`], [`main`], [Workers drain the queue before exit],
     )
   ]
 ]
@@ -1128,12 +1209,17 @@ Producer is tested against a small test server that implements the `.proto`.
       table.header([*Scenario*], [*Observed*]),
       [Invalid config values], [Returns specific errors for zero limits and malformed addresses],
       [Queue exceeds capacity], [Queue drops new items instead of blocking (`TryEnqueueDropsWhenFull`)],
-  [   [Dedup window logic], [Correctly calculates frame distance, alignment, and identifies duplicates],
+     [Dedup window logic], [Correctly calculates frame distance, alignment, and identifies duplicates],
       [Concurrent dedup access], [Concurrent check/insert operations pass without race conditions],
       [Dedup index management], [Check, insert, and remove operations maintain consistent state],
     )
   ]
 ]
+
+#pagebreak()
+== Deployment
+- Both producer and consumer require ffmpeg
+- The  `staging` and `media` folders must be on the same file system
 
 #pagebreak()
 == GUI: Consumer Side
