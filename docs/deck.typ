@@ -133,7 +133,7 @@ A two-machine simulation of a video upload service.
     *Output* (JSON logs on stdout):
     - When each upload starts and how it ends
     - Each retry
-    - A summary from each thread: sent, accepted, dropped, duplicate, an
+    - A summary from each thread: sent, accepted, dropped, duplicate, and failed counts
     - Each skipped non-video filed failed counts
   ],
 )
