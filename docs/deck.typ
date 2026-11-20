@@ -832,7 +832,7 @@ This affects how the producer treats a drop:
     + `q.Close`: after step 1, since enqueueing to a closed queue panics.
     + `<-done`: the workers drain the queue. After Ctrl+C they skip compression and save the originals.
   ],
-)x
+)
 
 #pagebreak()
 == Consumer Key Steps
